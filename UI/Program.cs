@@ -1,5 +1,6 @@
 using System;
 using Core;
+using Microsoft.Extensions.Configuration;
 using Photino.Blazor;
 
 namespace UI;
@@ -12,7 +13,12 @@ class Program
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.RootComponents.Add<App>("app");
         
-        builder.Services.AddCoreServices();
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
+        
+        builder.Services.AddCoreServices(configuration);
 
         var app = builder.Build();
         app.MainWindow
