@@ -5,6 +5,7 @@ using Infrastructure.Dto;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using QuestPDF.Infrastructure;
 
 namespace Core;
 
@@ -15,6 +16,9 @@ public static class DependencyInjection
         IConfiguration configuration
     )
     {
+        QuestPDF.Settings.License = LicenseType.Community;
+        QuestPDF.Settings.UseSystemFonts = true;
+        
         services.AddOptions<CbrClientOptions>()
             .Bind(configuration.GetSection(CbrClientOptions.SectionName))
             .ValidateDataAnnotations()
@@ -32,6 +36,7 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IExchangeRateAnalyticsService, ExchangeRateAnalyticsService>();
+        services.AddSingleton<IPdfReportService, PdfReportService>();
 
         return services;
     }
