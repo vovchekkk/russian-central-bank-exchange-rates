@@ -2,10 +2,10 @@
 
 public record DailyExchangeRatesReport
 {
-    public DateOnly CurrentDate { get; init; }
-    public DateOnly PreviousDate { get; init; }
-    public IReadOnlyList<CurrencyRateDynamics> AllRates { get; init; }
-    public IReadOnlyList<CurrencyRateDynamics> TopGrown { get; init; }
-    public IReadOnlyList<CurrencyRateDynamics> TopFallen { get; init; }
-    public decimal? AveragePercentChange { get; init; }
+    public required DateOnly CurrentDate { get; init; }
+    public required DateOnly PreviousDate { get; init; }
+    public required IReadOnlyList<CurrencyRateDynamics> AllRates { get; init; }
+    public required IReadOnlyList<CurrencyRateDynamics> TopGrown { get; init; }
+    public required IReadOnlyList<CurrencyRateDynamics> TopFallen { get; init; }
+    public required decimal? AveragePercentChange { get; init; }
 }

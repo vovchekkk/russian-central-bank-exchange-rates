@@ -2,8 +2,8 @@
 
 public record CurrencyRate
 {
-    public ushort NumCode { get; init; }
-    public string CharCode { get; init; }
-    public string Name { get; init; }
-    public decimal UnitRate { get; init; }
+    public required ushort NumCode { get; init; }
+    public required string CharCode { get; init; }
+    public required string Name { get; init; }
+    public required decimal UnitRate { get; init; }
 }

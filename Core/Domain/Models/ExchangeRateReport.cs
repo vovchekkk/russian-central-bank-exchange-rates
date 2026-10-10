@@ -2,6 +2,6 @@
 
 public record ExchangeRateReport
 {
-    public DateOnly Date { get; init; }
-    public IReadOnlyList<CurrencyRate> Rates { get; init; }
+    public required DateOnly Date { get; init; }
+    public required IReadOnlyList<CurrencyRate> Rates { get; init; }
 }
