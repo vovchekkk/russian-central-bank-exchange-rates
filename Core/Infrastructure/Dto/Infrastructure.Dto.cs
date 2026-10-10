@@ -84,7 +84,6 @@ namespace Infrastructure.Dto
         [System.Xml.Serialization.XmlElementAttribute("Value")]
         public string Value { get; set; }
         
-        [System.ComponentModel.DataAnnotations.RequiredAttribute(AllowEmptyStrings=true)]
         [System.Xml.Serialization.XmlElementAttribute("VunitRate")]
         public string VunitRate { get; set; }
         
