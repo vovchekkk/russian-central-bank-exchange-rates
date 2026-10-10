@@ -12,7 +12,7 @@
                             <xs:element name="Nominal" type="xs:unsignedInt" />
                             <xs:element name="Name" type="xs:string" />
                             <xs:element name="Value" type="xs:string" />
-                            <xs:element name="VunitRate" type="xs:string" />
+                            <xs:element name="VunitRate" type="xs:string" minOccurs="0" />
                         </xs:sequence>
                         <xs:attribute name="ID" type="xs:string" use="required" />
                     </xs:complexType>
