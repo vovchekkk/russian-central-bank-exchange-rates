@@ -13,8 +13,6 @@ namespace Core.Infrastructure;
 
 public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportService
 {
-    private static readonly CultureInfo RuCulture = new("ru-RU");
-
     public async Task<ErrorOr<byte[]>> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,
         CancellationToken cancellationToken = default
@@ -38,7 +36,7 @@ public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportServ
                         page.Size(PageSizes.A4);
                         page.Margin(1.5f, Unit.Centimetre);
                         page.PageColor(Colors.White);
-                        page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
+                        page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
 
                         page.Header().Element(c => ComposeHeader(c, report));
                         page.Content().Element(c => ComposeContent(c, report));

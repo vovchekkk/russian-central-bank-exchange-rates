@@ -20,8 +20,8 @@ public class ExchangeRateAnalyticsService(
         if (date < MinCbrDate)
             return Error.Validation(description: $"Курсы валют ЦБ РФ доступны начиная с {MinCbrDate:dd.MM.yyyy}.");
         
-        if (date > DateOnly.FromDateTime(DateTime.Today.AddDays(1)))
-            return Error.Validation(description: "Нельзя запросить курсы валют на дату из будущего.");
+        if (date > DateOnly.FromDateTime(DateTime.Today))
+            return Error.Validation(description: "Нельзя запросить курсы валют на дату позже текущей.");
         
         logger.LogInformation("Запрос курсов валют ЦБ РФ на дату {Date:dd.MM.yyyy}", date);
 
@@ -37,10 +37,11 @@ public class ExchangeRateAnalyticsService(
             return prevReportResult.Errors;
         var prevReport = prevReportResult.Value;
 
-        var dailyReport = BuildDailyReport(currentReport, prevReport);
+        var dailyReport = BuildDailyReport(date, currentReport, prevReport);
 
         logger.LogInformation(
-            "Отчёт за {CurrentDate:dd.MM.yyyy} (в сравнении с {PreviousDate:dd.MM.yyyy}) успешно сформирован (валют: {Count})",
+            "Отчёт на дату {RequestedDate:dd.MM.yyyy} (курс ЦБ от {CurrentDate:dd.MM.yyyy} в сравнении с {PreviousDate:dd.MM.yyyy}) успешно сформирован (валют: {Count})",
+            dailyReport.RequestedDate,
             dailyReport.CurrentDate,
             dailyReport.PreviousDate,
             dailyReport.AllRates.Count
@@ -50,6 +51,7 @@ public class ExchangeRateAnalyticsService(
     }
 
     private static DailyExchangeRatesReport BuildDailyReport(
+        DateOnly requestedDate,
         ExchangeRateReport currentReport,
         ExchangeRateReport prevReport
     )
@@ -80,6 +82,7 @@ public class ExchangeRateAnalyticsService(
 
         return new DailyExchangeRatesReport
         {
+            RequestedDate = requestedDate,
             CurrentDate = currentReport.Date,
             PreviousDate = prevReport.Date,
             AllRates = dynamics,
