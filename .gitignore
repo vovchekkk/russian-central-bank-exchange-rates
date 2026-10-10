@@ -23,8 +23,12 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+# config
+config.json
+
 # idea
 .idea/
+*.DotSettings.user
 
 # .NET Core
 project.lock.json
