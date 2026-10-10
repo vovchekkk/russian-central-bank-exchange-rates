@@ -4,7 +4,7 @@ namespace Core.Services;
 
 public interface IPdfReportService
 {
-    Task<byte[]> GenerateDailyReport(
+    Task<byte[]> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,
         CancellationToken cancellationToken = default
     );

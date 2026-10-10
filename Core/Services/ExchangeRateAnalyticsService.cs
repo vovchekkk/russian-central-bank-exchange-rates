@@ -23,36 +23,22 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
             prevReport.Rates,
             currentCurrencyRate => currentCurrencyRate.CharCode,
             prevCurrencyRate => prevCurrencyRate.CharCode,
-            (currentCurrencyRate, prevCurrencyRate) => new CurrencyRateDynamics
-            {
-                CharCode = currentCurrencyRate.CharCode,
-                Name = currentCurrencyRate.Name,
-                CurrentUnitRate = currentCurrencyRate.UnitRate,
-                PreviousUnitRate = prevCurrencyRate?.UnitRate,
-                AbsoluteChange = prevCurrencyRate != null
-                    ? currentCurrencyRate.UnitRate - prevCurrencyRate.UnitRate
-                    : null,
-                PercentChange = prevCurrencyRate != null && prevCurrencyRate.UnitRate != 0
-                    ? Math.Round((currentCurrencyRate.UnitRate - prevCurrencyRate.UnitRate) / prevCurrencyRate.UnitRate * 100m, 4)
-                    : null
-            }
+            BuildDynamics
         ).ToList();
 
-        var ratesWithChange = dynamics
-            .Where(x => x.PercentChange.HasValue)
-            .ToList();
-
-        var topGrown = ratesWithChange
+        var topGrown = dynamics
+            .Where(x => x.PercentChange > 0)
             .OrderByDescending(x => x.PercentChange)
             .Take(3)
             .ToList();
 
-        var topFallen = ratesWithChange
+        var topFallen = dynamics
+            .Where(x => x.PercentChange < 0)
             .OrderBy(x => x.PercentChange)
             .Take(3)
             .ToList();
-        
-        var rawAverage = ratesWithChange.Average(x => x.PercentChange);
+
+        var rawAverage = dynamics.Average(x => x.PercentChange);
         decimal? averagePercentChange = rawAverage.HasValue
             ? Math.Round(rawAverage.Value, 4)
             : null;
@@ -65,6 +51,27 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
             TopGrown = topGrown,
             TopFallen = topFallen,
             AveragePercentChange = averagePercentChange
+        };
+    }
+
+    private CurrencyRateDynamics BuildDynamics(CurrencyRate current, CurrencyRate? prev)
+    {
+        decimal? absoluteChange = prev is not null
+            ? current.UnitRate - prev.UnitRate
+            : null;
+        
+        decimal? percentChange = absoluteChange.HasValue && prev is not null && prev.UnitRate != 0
+            ? Math.Round(absoluteChange.Value / prev.UnitRate * 100m, 4)
+            : null;
+        
+        return new CurrencyRateDynamics
+        {
+            CharCode = current.CharCode,
+            Name = current.Name,
+            CurrentUnitRate = current.UnitRate,
+            PreviousUnitRate = prev?.UnitRate,
+            AbsoluteChange = absoluteChange,
+            PercentChange = percentChange
         };
     }
 }

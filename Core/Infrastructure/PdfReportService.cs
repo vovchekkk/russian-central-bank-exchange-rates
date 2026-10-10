@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using Core.Domain.Models;
+using Core.Infrastructure.Helpers;
 using Core.Services;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -11,7 +12,7 @@ public class PdfReportService : IPdfReportService
 {
     private static readonly CultureInfo RuCulture = new("ru-RU");
 
-    public Task<byte[]> GenerateDailyReport(
+    public Task<byte[]> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,
         CancellationToken cancellationToken = default
     )
@@ -19,7 +20,7 @@ public class PdfReportService : IPdfReportService
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            
+
             return Document.Create(container =>
             {
                 container.Page(page =>
@@ -51,10 +52,9 @@ public class PdfReportService : IPdfReportService
             row.RelativeItem().Column(col =>
             {
                 col.Item().Text("Отчёт по курсам валют ЦБ РФ").FontSize(18).Bold().FontColor(Colors.Blue.Darken3);
-                col.Item().PaddingTop(4)
-                    .Text(
-                        $"Дата отчёта: {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})"
-                    )
+                col.Item()
+                    .PaddingTop(4)
+                    .Text(report.FormatReportDatesLine())
                     .FontSize(11).FontColor(Colors.Grey.Darken2);
             });
         });
@@ -79,11 +79,7 @@ public class PdfReportService : IPdfReportService
 
             col.Item().Text("Итоги дня").FontSize(14).Bold();
 
-            var avgText = report.AveragePercentChange.HasValue
-                ? FormatSigned(report.AveragePercentChange.Value, "%")
-                : "Н/Д";
-
-            col.Item().Text($"Среднее изменение по всем валютам: {avgText}").SemiBold();
+            col.Item().Text(report.FormatAveragePercentChange()).SemiBold();
 
             col.Item().Row(row =>
             {
@@ -93,32 +89,17 @@ public class PdfReportService : IPdfReportService
                 {
                     c.Item().Text("Топ-3 роста:").Bold().FontColor(Colors.Green.Darken2);
                     foreach (var item in report.TopGrown)
-                    {
-                        c.Item().Text(
-                                $"• {item.CharCode} ({item.Name}): {FormatSigned(item.PercentChange, "%")} ({FormatSigned(item.AbsoluteChange, "руб.")})");
-                    }
+                        c.Item().Text(item.FormatSummaryLine());
                 });
 
                 row.RelativeItem().Column(c =>
                 {
                     c.Item().Text("Топ-3 падения:").Bold().FontColor(Colors.Red.Darken2);
                     foreach (var item in report.TopFallen)
-                    {
-                        c.Item().Text(
-                            $"• {item.CharCode} ({item.Name}): {FormatSigned(item.PercentChange, "%")} ({FormatSigned(item.AbsoluteChange, " руб.")})");
-                    }
+                        c.Item().Text(item.FormatSummaryLine());
                 });
             });
         });
-    }
-
-    private static string FormatSigned(decimal? value, string suffix = "")
-    {
-        if (!value.HasValue)
-            return "-";
-
-        var sign = value.Value > 0 ? "+" : "";
-        return $"{sign}{value.Value.ToString("N4", RuCulture)}{suffix}";
     }
 
     private static void ComposeRatesTable(IContainer container, DailyExchangeRatesReport report)
@@ -156,10 +137,10 @@ public class PdfReportService : IPdfReportService
 
                 BodyCell(table.Cell(), rate.CharCode);
                 BodyCell(table.Cell(), rate.Name);
-                BodyCell(table.Cell(), rate.CurrentUnitRate.ToString("N4", RuCulture), alignRight: true);
-                BodyCell(table.Cell(), rate.PreviousUnitRate?.ToString("N4", RuCulture) ?? "-", alignRight: true);
-                BodyCell(table.Cell(), FormatSigned(rate.AbsoluteChange), alignRight: true, color: changeColor);
-                BodyCell(table.Cell(), FormatSigned(rate.PercentChange, "%"), alignRight: true, color: changeColor);
+                BodyCell(table.Cell(), rate.CurrentUnitRate.FormatRate(), alignRight: true);
+                BodyCell(table.Cell(), rate.PreviousUnitRate.FormatRate(), alignRight: true);
+                BodyCell(table.Cell(), rate.AbsoluteChange.FormatSigned(), alignRight: true, color: changeColor);
+                BodyCell(table.Cell(), rate.PercentChange.FormatSigned("%"), alignRight: true, color: changeColor);
             }
         });
     }
