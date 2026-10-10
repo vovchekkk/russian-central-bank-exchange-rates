@@ -1,4 +1,5 @@
 using System;
+using Core;
 using Photino.Blazor;
 
 namespace UI;
@@ -8,10 +9,12 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
-        var appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
-        appBuilder.RootComponents.Add<App>("app");
+        var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
+        builder.RootComponents.Add<App>("app");
+        
+        builder.Services.AddCoreServices();
 
-        var app = appBuilder.Build();
+        var app = builder.Build();
         app.MainWindow
             .SetTitle("Photino Blazor App")
             .SetSize(1024, 768)

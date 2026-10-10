@@ -7,23 +7,36 @@ namespace Core.Infrastructure.Mappers;
 public static class CbrMapperExtensions
 {
     private static readonly CultureInfo RuCulture = new("ru-RU");
-    
+
     public static CurrencyRate ToDomain(this ValCursValute dto)
     {
-        return new CurrencyRate{
-            Id = Guid.Parse(dto.Id),
+        decimal unitRate;
+
+        if (!string.IsNullOrEmpty(dto.VunitRate))
+            unitRate = decimal.Parse(dto.VunitRate, RuCulture);
+        else
+        {
+            var rawValue = decimal.Parse(dto.Value, RuCulture);
+            unitRate = dto.Nominal > 0
+                ? rawValue / dto.Nominal
+                : throw new InvalidOperationException(
+                    $"Invalid Nominal in {dto.CharCode}': {dto.Nominal}. Nominal must be greater than 0"
+                );
+        }
+
+        return new CurrencyRate
+        {
             NumCode = dto.NumCode,
             CharCode = dto.CharCode,
-            Nominal = (int)dto.Nominal,
             Name = dto.Name,
-            Value = decimal.Parse(dto.Value, RuCulture),
-            UnitRate = decimal.Parse(dto.VunitRate, RuCulture)
+            UnitRate = unitRate
         };
     }
-    
+
     public static ExchangeRateReport ToDomain(this ValCurs domain)
     {
-        return new ExchangeRateReport{
+        return new ExchangeRateReport
+        {
             Date = DateOnly.ParseExact(domain.Date, "dd.MM.yyyy", CultureInfo.InvariantCulture),
             Rates = domain.Valute.Select(v => v.ToDomain()).ToList()
         };
