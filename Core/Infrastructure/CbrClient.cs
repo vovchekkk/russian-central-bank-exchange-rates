@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using System.Xml.Serialization;
 using Core.Services;
 using Infrastructure.Dto;
@@ -14,8 +15,8 @@ public class CbrClient(HttpClient client, XmlSerializer serializer) : ICbrClient
 
     public async Task<ValCurs> GetValCursAsync(DateOnly date, CancellationToken cancellationToken = default)
     {
-        var dateFormatted = date.ToString("dd/MM/yyyy");
-        var url = $"https://www.cbr.ru/scripts/XML_daily.asp?date_req={dateFormatted}";
+        var dateFormatted = date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        var url = $"scripts/XML_daily.asp?date_req={dateFormatted}";
         
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -23,7 +24,7 @@ public class CbrClient(HttpClient client, XmlSerializer serializer) : ICbrClient
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
         var encoding = Encoding.GetEncoding("windows-1251");
-        var reader = new StreamReader(stream, encoding);
+        using var reader = new StreamReader(stream, encoding);
         
         var result = (ValCurs?)serializer.Deserialize(reader);
 

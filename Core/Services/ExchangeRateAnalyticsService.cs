@@ -15,7 +15,7 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
         var currentRaw = await cbrClient.GetValCursAsync(date, cancellationToken);
         var currentReport = currentRaw.ToDomain();
 
-        var prevTargetDate = date.AddDays(-1);
+        var prevTargetDate = currentReport.Date.AddDays(-1);
         var prevRaw = await cbrClient.GetValCursAsync(prevTargetDate, cancellationToken);
         var prevReport = prevRaw.ToDomain();
 
@@ -38,15 +38,24 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
             }
         ).ToList();
 
-        var topGrown = dynamics
+        var ratesWithChange = dynamics
+            .Where(x => x.PercentChange.HasValue)
+            .ToList();
+
+        var topGrown = ratesWithChange
             .OrderByDescending(x => x.PercentChange)
             .Take(3)
             .ToList();
 
-        var topFallen = dynamics
+        var topFallen = ratesWithChange
             .OrderBy(x => x.PercentChange)
             .Take(3)
             .ToList();
+        
+        var rawAverage = ratesWithChange.Average(x => x.PercentChange);
+        decimal? averagePercentChange = rawAverage.HasValue
+            ? Math.Round(rawAverage.Value, 4)
+            : null;
 
         return new DailyExchangeRatesReport
         {
@@ -54,7 +63,8 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
             PreviousDate = prevReport.Date,
             AllRates = dynamics,
             TopGrown = topGrown,
-            TopFallen = topFallen
+            TopFallen = topFallen,
+            AveragePercentChange = averagePercentChange
         };
     }
 }
