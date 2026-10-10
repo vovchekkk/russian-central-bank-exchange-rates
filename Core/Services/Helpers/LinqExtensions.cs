@@ -2,8 +2,7 @@
 
 public static class LinqExtensions
 {
-    public static IEnumerable<TResult> LeftJoin<TOuter, TInner, TKey,
-        TResult>(
+    public static IEnumerable<TResult> LeftJoin<TOuter, TInner, TKey, TResult>(
         this IEnumerable<TOuter> outer,
         IEnumerable<TInner> inner,
         Func<TOuter, TKey> outerKeySelector,
