@@ -1,0 +1,13 @@
+﻿{
+  "CbrClient": {
+    "BaseUrl": "https://www.cbr.ru/",
+    "Timeout": "00:00:10"
+  },
+  "Smtp": {
+    "Host": "smtp.yandex.ru",
+    "Port": 465,
+    "Username": "your-login@yandex.ru",
+    "Password": "your-app-password",
+    "SenderEmail": "your-login@yandex.ru"
+  }
+}
