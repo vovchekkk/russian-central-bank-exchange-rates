@@ -58,12 +58,13 @@ class Program
                 configuration = new ConfigurationBuilder().Build();
             }
 
+            builder.Services.AddSingleton(new StartupConfigState(configErrorMessage));
             builder.Services.AddCoreServices(configuration);
 
             var app = builder.Build();
             app.MainWindow
-                .SetTitle("Photino Blazor App")
-                .SetSize(1024, 768)
+                .SetTitle("Курсы валют ЦБ РФ")
+                .SetSize(1160, 820)
                 .Center();
 
             if (configErrorMessage is not null)
@@ -99,3 +100,5 @@ class Program
         }
     }
 }
+
+public record StartupConfigState(string? ErrorMessage);

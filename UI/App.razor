@@ -1,2 +1,451 @@
-﻿<h1>Привет из Photino Blazor!</h1>
-<p>Это нативное кроссплатформенное десктопное окно с Blazor UI.</p>
+@inject IExchangeRateAnalyticsService AnalyticsService
+@inject IPdfReportService PdfReportService
+@inject IEmailService EmailService
+@inject StartupConfigState ConfigState
+
+<div class="app-container">
+    <header class="app-header">
+        <div class="header-title-group">
+            <h1>Курсы валют Банка России</h1>
+            <div class="header-subtitle">Ежедневная аналитика динамики курсов и рассылка PDF-отчётов</div>
+        </div>
+
+        @if (_report is not null)
+        {
+            <div class="report-date-badge">
+                @_report.FormatReportDatesLine()
+            </div>
+        }
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(ConfigState.ErrorMessage))
+    {
+        <div class="alert alert-error">
+            <div>
+                <strong>Ошибка конфигурационного файла:</strong> @ConfigState.ErrorMessage
+            </div>
+        </div>
+    }
+
+    <section class="controls-grid">
+        <div class="control-card">
+            <div class="control-card-title">Параметры выгрузки</div>
+            <div class="control-row">
+                <input type="date"
+                       class="form-input"
+                       @bind="_selectedDate"
+                       min="1992-07-02"
+                       max="@MaxDateString"
+                       disabled="@IsBusy" />
+
+                <button type="button"
+                        class="btn btn-primary"
+                        @onclick="LoadDataAsync"
+                        disabled="@IsBusy">
+                    @if (_currentStage == OperationStage.LoadingRates)
+                    {
+                        <span class="spinner-sm"></span>
+                    }
+                    <span>Загрузить данные</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="control-card">
+            <div class="control-card-title">Отправка PDF-отчёта на почту</div>
+            <div class="control-row">
+                <input type="email"
+                       class="form-input"
+                       placeholder="Адрес получателя (например, user@yandex.ru)"
+                       @bind="_recipientEmail"
+                       @bind:event="oninput"
+                       disabled="@IsBusy" />
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        @onclick="SendReportAsync"
+                        disabled="@IsBusy">
+                    @if (_currentStage is OperationStage.GeneratingPdf or OperationStage.SendingEmail)
+                    {
+                        <span class="spinner-sm"></span>
+                    }
+                    <span>Отправить отчёт</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    @if (IsBusy)
+    {
+        <div class="operation-status-bar">
+            <div class="spinner"></div>
+            <span>@GetStageText()</span>
+
+            <div class="operation-steps">
+                <span class="step-pill @GetStepClass(OperationStage.LoadingRates)">1. Загрузка</span>
+                @if (_isSendFlow)
+                {
+                    <span class="step-pill @GetStepClass(OperationStage.GeneratingPdf)">2. Формирование</span>
+                    <span class="step-pill @GetStepClass(OperationStage.SendingEmail)">3. Отправка</span>
+                }
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-error">
+            <div>@_errorMessage</div>
+            <button type="button" class="alert-close" @onclick="() => _errorMessage = null" title="Закрыть">&times;</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="alert alert-success">
+            <div>@_successMessage</div>
+            <button type="button" class="alert-close" @onclick="() => _successMessage = null" title="Закрыть">&times;</button>
+        </div>
+    }
+
+    @if (_report is not null && _report.RequestedDate != _report.CurrentDate)
+    {
+        <div class="alert alert-warning">
+            <div>
+                На выбранную дату <strong>@_report.RequestedDate.ToString("dd.MM.yyyy")</strong> ЦБ РФ не устанавливал новых котировок.
+                Отображены официальные курсы, действующие с <strong>@_report.CurrentDate.ToString("dd.MM.yyyy")</strong>
+                (в сравнении с <strong>@_report.PreviousDate.ToString("dd.MM.yyyy")</strong>).
+            </div>
+        </div>
+    }
+
+    @if (_report is not null)
+    {
+        <section class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-card-header">Среднее изменение за день</div>
+                <div class="avg-value @GetChangeCssClass(_report.AveragePercentChange)">
+                    @_report.AveragePercentChange.FormatSigned("%", "Н/Д")
+                </div>
+                <div class="avg-caption">Всего валют в отчёте: @_report.AllRates.Count</div>
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-card-header" style="color: var(--success);">Топ-3 роста</div>
+                @if (_report.TopGrown.Count == 0)
+                {
+                    <div class="rate-neutral">Нет выросших валют</div>
+                }
+                else
+                {
+                    <ul class="top-list">
+                        @foreach (var item in _report.TopGrown)
+                        {
+                            <li class="top-item">
+                                <span class="top-item-name" title="@item.Name">
+                                    <span class="top-item-code">@item.CharCode</span>@item.Name
+                                </span>
+                                <span class="rate-up">@item.PercentChange.FormatSigned("%")</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-card-header" style="color: var(--danger);">Топ-3 падения</div>
+                @if (_report.TopFallen.Count == 0)
+                {
+                    <div class="rate-neutral">Нет упавших валют</div>
+                }
+                else
+                {
+                    <ul class="top-list">
+                        @foreach (var item in _report.TopFallen)
+                        {
+                            <li class="top-item">
+                                <span class="top-item-name" title="@item.Name">
+                                    <span class="top-item-code">@item.CharCode</span>@item.Name
+                                </span>
+                                <span class="rate-down">@item.PercentChange.FormatSigned("%")</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+
+        <section class="table-card">
+            <div class="table-toolbar">
+                <div class="table-title">Курсы валют (@FilteredRates.Count())</div>
+                <input type="text"
+                       class="search-input"
+                       placeholder="Поиск по коду или названию..."
+                       @bind="_searchQuery"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="table-wrapper">
+                <table class="rates-table">
+                    <thead>
+                        <tr>
+                            <th @onclick="() => SortBy(SortColumn.CharCode)">
+                                Код валюты @RenderSortIndicator(SortColumn.CharCode)
+                            </th>
+                            <th @onclick="() => SortBy(SortColumn.Name)">
+                                Название @RenderSortIndicator(SortColumn.Name)
+                            </th>
+                            <th class="num" @onclick="() => SortBy(SortColumn.CurrentRate)">
+                                Курс (руб.) @RenderSortIndicator(SortColumn.CurrentRate)
+                            </th>
+                            <th class="num" @onclick="() => SortBy(SortColumn.PreviousRate)">
+                                Пред. курс (руб.) @RenderSortIndicator(SortColumn.PreviousRate)
+                            </th>
+                            <th class="num" @onclick="() => SortBy(SortColumn.AbsoluteChange)">
+                                Изм. (руб.) @RenderSortIndicator(SortColumn.AbsoluteChange)
+                            </th>
+                            <th class="num" @onclick="() => SortBy(SortColumn.PercentChange)">
+                                Изменение (%) @RenderSortIndicator(SortColumn.PercentChange)
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rate in FilteredRates)
+                        {
+                            var changeClass = GetChangeCssClass(rate.PercentChange);
+                            <tr>
+                                <td><span class="code-pill">@rate.CharCode</span></td>
+                                <td>@rate.Name</td>
+                                <td class="num"><strong>@rate.CurrentUnitRate.FormatRate()</strong></td>
+                                <td class="num rate-neutral">@rate.PreviousUnitRate.FormatRate()</td>
+                                <td class="num @changeClass">@rate.AbsoluteChange.FormatSigned()</td>
+                                <td class="num @changeClass">@rate.PercentChange.FormatSigned("%")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    else if (!IsBusy)
+    {
+        <div class="empty-state">
+            <h3>Данные ещё не загружены</h3>
+            <p>Выберите дату (не позже текущей) и нажмите «Загрузить данные».</p>
+        </div>
+    }
+</div>
+
+@code {
+    private enum OperationStage
+    {
+        None,
+        LoadingRates,
+        GeneratingPdf,
+        SendingEmail
+    }
+
+    private enum SortColumn
+    {
+        CharCode,
+        Name,
+        CurrentRate,
+        PreviousRate,
+        AbsoluteChange,
+        PercentChange
+    }
+
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private DailyExchangeRatesReport? _report;
+    private string _recipientEmail = string.Empty;
+    private string _searchQuery = string.Empty;
+
+    private OperationStage _currentStage = OperationStage.None;
+    private bool _isSendFlow;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private SortColumn _sortColumn = SortColumn.CharCode;
+    private bool _sortAscending = true;
+
+    private bool IsBusy => _currentStage != OperationStage.None;
+    private static string MaxDateString => DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+
+    private IEnumerable<CurrencyRateDynamics> FilteredRates
+    {
+        get
+        {
+            if (_report is null)
+                return [];
+
+            var query = _report.AllRates.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var term = _searchQuery.Trim();
+                query = query.Where(r =>
+                    r.CharCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return (_sortColumn, _sortAscending) switch
+            {
+                (SortColumn.CharCode, true) => query.OrderBy(r => r.CharCode),
+                (SortColumn.CharCode, false) => query.OrderByDescending(r => r.CharCode),
+                (SortColumn.Name, true) => query.OrderBy(r => r.Name),
+                (SortColumn.Name, false) => query.OrderByDescending(r => r.Name),
+                (SortColumn.CurrentRate, true) => query.OrderBy(r => r.CurrentUnitRate),
+                (SortColumn.CurrentRate, false) => query.OrderByDescending(r => r.CurrentUnitRate),
+                (SortColumn.PreviousRate, true) => query.OrderBy(r => r.PreviousUnitRate),
+                (SortColumn.PreviousRate, false) => query.OrderByDescending(r => r.PreviousUnitRate),
+                (SortColumn.AbsoluteChange, true) => query.OrderBy(r => r.AbsoluteChange),
+                (SortColumn.AbsoluteChange, false) => query.OrderByDescending(r => r.AbsoluteChange),
+                (SortColumn.PercentChange, true) => query.OrderBy(r => r.PercentChange),
+                (SortColumn.PercentChange, false) => query.OrderByDescending(r => r.PercentChange),
+                _ => query
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ConfigState.ErrorMessage))
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (IsBusy)
+            return;
+
+        _errorMessage = null;
+        _successMessage = null;
+        _isSendFlow = false;
+
+        await SetStageAsync(OperationStage.LoadingRates);
+
+        try
+        {
+            var result = await AnalyticsService.GetDailyAnalyticsAsync(_selectedDate);
+            if (result.IsError)
+            {
+                _errorMessage = result.FirstError.Description;
+                return;
+            }
+
+            _report = result.Value;
+        }
+        finally
+        {
+            _currentStage = OperationStage.None;
+        }
+    }
+
+    private async Task SendReportAsync()
+    {
+        if (IsBusy)
+            return;
+
+        _errorMessage = null;
+        _successMessage = null;
+        _isSendFlow = true;
+
+        try
+        {
+            // 1. Загрузка (если данные на выбранную дату ещё не загружены)
+            if (_report is null || _report.RequestedDate != _selectedDate)
+            {
+                await SetStageAsync(OperationStage.LoadingRates);
+
+                var analyticsResult = await AnalyticsService.GetDailyAnalyticsAsync(_selectedDate);
+                if (analyticsResult.IsError)
+                {
+                    _errorMessage = analyticsResult.FirstError.Description;
+                    return;
+                }
+
+                _report = analyticsResult.Value;
+            }
+
+            // 2. Формирование PDF-отчёта
+            await SetStageAsync(OperationStage.GeneratingPdf);
+
+            var pdfResult = await PdfReportService.GenerateDailyReportAsync(_report);
+            if (pdfResult.IsError)
+            {
+                _errorMessage = pdfResult.FirstError.Description;
+                return;
+            }
+
+            // 3. Отправка письма по SMTP
+            await SetStageAsync(OperationStage.SendingEmail);
+
+            var sendResult = await EmailService.SendDailyReportAsync(_recipientEmail.Trim(), _report, pdfResult.Value);
+            if (sendResult.IsError)
+            {
+                _errorMessage = sendResult.FirstError.Description;
+                return;
+            }
+
+            _successMessage = $"Отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сформирован и отправлен на {_recipientEmail.Trim()}.";
+        }
+        finally
+        {
+            _currentStage = OperationStage.None;
+            _isSendFlow = false;
+        }
+    }
+
+    private async Task SetStageAsync(OperationStage stage)
+    {
+        _currentStage = stage;
+        StateHasChanged();
+        await Task.Yield();
+    }
+
+    private string GetStageText() => _currentStage switch
+    {
+        OperationStage.LoadingRates => $"Загрузка курсов валют ЦБ РФ на {_selectedDate:dd.MM.yyyy}...",
+        OperationStage.GeneratingPdf => $"Формирование PDF-отчёта за {_report?.CurrentDate:dd.MM.yyyy}...",
+        OperationStage.SendingEmail => $"Отправка отчёта на адрес {_recipientEmail}...",
+        _ => string.Empty
+    };
+
+    private string GetStepClass(OperationStage step)
+    {
+        if (_currentStage == step)
+            return "active";
+
+        return _currentStage > step ? "done" : string.Empty;
+    }
+
+    private void SortBy(SortColumn column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = column is SortColumn.CharCode or SortColumn.Name;
+        }
+    }
+
+    private string RenderSortIndicator(SortColumn column)
+    {
+        if (_sortColumn != column)
+            return string.Empty;
+
+        return _sortAscending ? "▲" : "▼";
+    }
+
+    private static string GetChangeCssClass(decimal? change) => change switch
+    {
+        > 0 => "rate-up",
+        < 0 => "rate-down",
+        _ => "rate-neutral"
+    };
+}
