@@ -23,6 +23,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(CbrClientOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddOptions<SmtpOptions>()
+            .Bind(configuration.GetSection(SmtpOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
         
         services.AddSingleton(new XmlSerializer(typeof(ValCurs)));
 
@@ -35,8 +39,9 @@ public static class DependencyInjection
             client.DefaultRequestHeaders.Add("User-Agent", "RussianCentralBankExchangeRates/1.0");
         });
 
-        services.AddScoped<IExchangeRateAnalyticsService, ExchangeRateAnalyticsService>();
+        services.AddTransient<IExchangeRateAnalyticsService, ExchangeRateAnalyticsService>();
         services.AddSingleton<IPdfReportService, PdfReportService>();
+        services.AddSingleton<IEmailService, SmtpEmailService>();
 
         return services;
     }
