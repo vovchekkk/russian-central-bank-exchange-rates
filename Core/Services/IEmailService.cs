@@ -1,10 +1,11 @@
 ﻿using Core.Domain.Models;
+using ErrorOr;
 
 namespace Core.Services;
 
 public interface IEmailService
 {
-    Task SendDailyReportAsync(
+    public Task<ErrorOr<Success>> SendDailyReportAsync(
         string recipientEmail,
         DailyExchangeRatesReport report,
         byte[] pdfAttachment,

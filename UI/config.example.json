@@ -8,6 +8,7 @@
     "Port": 465,
     "Username": "your-login@yandex.ru",
     "Password": "your-app-password",
-    "SenderEmail": "your-login@yandex.ru"
+    "SenderEmail": "your-login@yandex.ru",
+    "Timeout": "00:00:15"
   }
 }

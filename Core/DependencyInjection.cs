@@ -1,4 +1,4 @@
-﻿using System.Xml.Serialization;
+using System.Xml.Serialization;
 using Core.Infrastructure;
 using Core.Services;
 using Infrastructure.Dto;
@@ -23,6 +23,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(CbrClientOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        
         services.AddOptions<SmtpOptions>()
             .Bind(configuration.GetSection(SmtpOptions.SectionName))
             .ValidateDataAnnotations()
@@ -30,11 +31,8 @@ public static class DependencyInjection
         
         services.AddSingleton(new XmlSerializer(typeof(ValCurs)));
 
-        services.AddHttpClient<ICbrClient, CbrClient>((sp, client) =>
+        services.AddHttpClient<ICbrClient, CbrClient>(client =>
         {
-            var options = sp.GetRequiredService<IOptions<CbrClientOptions>>().Value;
-            client.BaseAddress = new Uri(options.BaseUrl);
-            client.Timeout = options.Timeout;
             client.DefaultRequestHeaders.Add("Accept", "application/xml");
             client.DefaultRequestHeaders.Add("User-Agent", "RussianCentralBankExchangeRates/1.0");
         });

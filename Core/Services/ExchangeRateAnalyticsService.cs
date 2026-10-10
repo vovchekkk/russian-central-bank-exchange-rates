@@ -1,24 +1,59 @@
-﻿using System.Globalization;
 using Core.Domain.Models;
-using Core.Infrastructure.Mappers;
 using Core.Services.Helpers;
+using ErrorOr;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Services;
 
-public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateAnalyticsService
+public class ExchangeRateAnalyticsService(
+    ICbrClient cbrClient,
+    ILogger<ExchangeRateAnalyticsService> logger
+) : IExchangeRateAnalyticsService
 {
-    public async Task<DailyExchangeRatesReport> GetDailyAnalyticsAsync(
+    private static readonly DateOnly MinCbrDate = new(1992, 7, 2);
+    
+    public async Task<ErrorOr<DailyExchangeRatesReport>> GetDailyAnalyticsAsync(
         DateOnly date,
         CancellationToken cancellationToken = default
     )
     {
-        var currentRaw = await cbrClient.GetValCursAsync(date, cancellationToken);
-        var currentReport = currentRaw.ToDomain();
+        if (date < MinCbrDate)
+            return Error.Validation(description: $"Курсы валют ЦБ РФ доступны начиная с {MinCbrDate:dd.MM.yyyy}.");
+        
+        if (date > DateOnly.FromDateTime(DateTime.Today.AddDays(1)))
+            return Error.Validation(description: "Нельзя запросить курсы валют на дату из будущего.");
+        
+        logger.LogInformation("Запрос курсов валют ЦБ РФ на дату {Date:dd.MM.yyyy}", date);
+
+        var currentReportResult = await cbrClient.GetExchangeRateReportAsync(date, cancellationToken);
+        if (currentReportResult.IsError)
+            return currentReportResult.Errors;
+        var currentReport = currentReportResult.Value;
 
         var prevTargetDate = currentReport.Date.AddDays(-1);
-        var prevRaw = await cbrClient.GetValCursAsync(prevTargetDate, cancellationToken);
-        var prevReport = prevRaw.ToDomain();
 
+        var prevReportResult = await cbrClient.GetExchangeRateReportAsync(prevTargetDate, cancellationToken);
+        if (prevReportResult.IsError)
+            return prevReportResult.Errors;
+        var prevReport = prevReportResult.Value;
+
+        var dailyReport = BuildDailyReport(currentReport, prevReport);
+
+        logger.LogInformation(
+            "Отчёт за {CurrentDate:dd.MM.yyyy} (в сравнении с {PreviousDate:dd.MM.yyyy}) успешно сформирован (валют: {Count})",
+            dailyReport.CurrentDate,
+            dailyReport.PreviousDate,
+            dailyReport.AllRates.Count
+        );
+
+        return dailyReport;
+    }
+
+    private static DailyExchangeRatesReport BuildDailyReport(
+        ExchangeRateReport currentReport,
+        ExchangeRateReport prevReport
+    )
+    {
         var dynamics = currentReport.Rates.LeftJoin(
             prevReport.Rates,
             currentCurrencyRate => currentCurrencyRate.CharCode,
@@ -54,16 +89,16 @@ public class ExchangeRateAnalyticsService(ICbrClient cbrClient) : IExchangeRateA
         };
     }
 
-    private CurrencyRateDynamics BuildDynamics(CurrencyRate current, CurrencyRate? prev)
+    private static CurrencyRateDynamics BuildDynamics(CurrencyRate current, CurrencyRate? prev)
     {
         decimal? absoluteChange = prev is not null
             ? current.UnitRate - prev.UnitRate
             : null;
-        
-        decimal? percentChange = absoluteChange.HasValue && prev is not null && prev.UnitRate != 0
+
+        decimal? percentChange = prev is { UnitRate: > 0 } && absoluteChange.HasValue
             ? Math.Round(absoluteChange.Value / prev.UnitRate * 100m, 4)
             : null;
-        
+
         return new CurrencyRateDynamics
         {
             CharCode = current.CharCode,
