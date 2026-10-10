@@ -1,11 +1,18 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="utf-8" />
-    <title>Photino Blazor App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Курсы валют ЦБ РФ</title>
+    <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
-<app>Загрузка...</app>
-<script src="_framework/blazor.webview.js"></script>
+    <app>
+        <div class="initial-loader">
+            <div class="spinner"></div>
+            <span>Запуск приложения...</span>
+        </div>
+    </app>
+    <script src="_framework/blazor.webview.js"></script>
 </body>
-</html>
+</html>
