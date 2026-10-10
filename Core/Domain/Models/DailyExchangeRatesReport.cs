@@ -7,4 +7,5 @@ public record DailyExchangeRatesReport
     public IReadOnlyList<CurrencyRateDynamics> AllRates { get; init; }
     public IReadOnlyList<CurrencyRateDynamics> TopGrown { get; init; }
     public IReadOnlyList<CurrencyRateDynamics> TopFallen { get; init; }
+    public decimal? AveragePercentChange { get; init; }
 }
