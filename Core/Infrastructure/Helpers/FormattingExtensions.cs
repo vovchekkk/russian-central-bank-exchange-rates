@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Core.Domain.Models;
 
 namespace Core.Infrastructure.Helpers;
@@ -8,7 +8,9 @@ public static class FormattingExtensions
     private static readonly CultureInfo RuCulture = new("ru-RU");
 
     public static string FormatReportDatesLine(this DailyExchangeRatesReport report)
-        => $"Дата отчёта: {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})";
+        => report.RequestedDate == report.CurrentDate
+            ? $"Дата курса ЦБ РФ: {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})"
+            : $"На дату {report.RequestedDate:dd.MM.yyyy} действует курс от {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})";
 
     public static string FormatAveragePercentChange(this DailyExchangeRatesReport report)
         => $"Среднее изменение по всем валютам: {report.AveragePercentChange.FormatSigned("%", "Н/Д")}";
