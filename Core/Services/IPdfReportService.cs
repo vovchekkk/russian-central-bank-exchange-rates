@@ -1,10 +1,11 @@
 ﻿using Core.Domain.Models;
+using ErrorOr;
 
 namespace Core.Services;
 
 public interface IPdfReportService
 {
-    Task<byte[]> GenerateDailyReportAsync(
+    public Task<ErrorOr<byte[]>> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,
         CancellationToken cancellationToken = default
     );

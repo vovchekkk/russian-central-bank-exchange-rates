@@ -1,48 +1,84 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Core.Domain.Models;
 using Core.Infrastructure.Helpers;
 using Core.Services;
+using Microsoft.Extensions.Logging;
+using QuestPDF.Drawing.Exceptions;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using ErrorOr;
 
 namespace Core.Infrastructure;
 
-public class PdfReportService : IPdfReportService
+public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportService
 {
     private static readonly CultureInfo RuCulture = new("ru-RU");
 
-    public Task<byte[]> GenerateDailyReportAsync(
+    public async Task<ErrorOr<byte[]>> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,
         CancellationToken cancellationToken = default
     )
     {
-        return Task.Run(() =>
+        if (report.AllRates.Count == 0)
+            return Error.Validation(description: "Нет данных для формирования PDF-отчёта.");
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            logger.LogInformation("Генерация PDF-отчёта за {Date:dd.MM.yyyy}", report.CurrentDate);
 
-            return Document.Create(container =>
+            var pdfBytes = await Task.Run(() =>
             {
-                container.Page(page =>
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return Document.Create(container =>
                 {
-                    page.Size(PageSizes.A4);
-                    page.Margin(1.5f, Unit.Centimetre);
-                    page.PageColor(Colors.White);
-                    page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
-
-                    page.Header().Element(c => ComposeHeader(c, report));
-                    page.Content().Element(c => ComposeContent(c, report));
-
-                    page.Footer().AlignCenter().Text(x =>
+                    container.Page(page =>
                     {
-                        x.Span("Страница ");
-                        x.CurrentPageNumber();
-                        x.Span(" из ");
-                        x.TotalPages();
+                        page.Size(PageSizes.A4);
+                        page.Margin(1.5f, Unit.Centimetre);
+                        page.PageColor(Colors.White);
+                        page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
+
+                        page.Header().Element(c => ComposeHeader(c, report));
+                        page.Content().Element(c => ComposeContent(c, report));
+
+                        page.Footer().AlignCenter().Text(x =>
+                        {
+                            x.Span("Страница ");
+                            x.CurrentPageNumber();
+                            x.Span(" из ");
+                            x.TotalPages();
+                        });
                     });
-                });
-            }).GeneratePdf();
-        }, cancellationToken);
+                }).GeneratePdf();
+            }, cancellationToken);
+
+            logger.LogInformation(
+                "PDF-отчёт за {Date:dd.MM.yyyy} успешно создан ({Size} байт)",
+                report.CurrentDate,
+                pdfBytes.Length
+            );
+
+            return pdfBytes;
+        }
+        catch (DocumentDrawingException ex)
+        {
+            logger.LogError(ex, "Ошибка отрисовки или шрифтов при создании PDF за {Date:dd.MM.yyyy}",
+                report.CurrentDate);
+            return Error.Failure(description: "Ошибка отрисовки PDF: в системе отсутствует необходимый шрифт.");
+        }
+        catch (DocumentLayoutException ex)
+        {
+            logger.LogError(ex, "Ошибка вёрстки при создании PDF за {Date:dd.MM.yyyy}", report.CurrentDate);
+            return Error.Failure(description: "Ошибка разметки при формировании PDF-отчёта.");
+        }
+        catch (InitializationException ex)
+        {
+            logger.LogError(ex, "Ошибка инициализации движка QuestPDF при создании отчёта за {Date:dd.MM.yyyy}",
+                report.CurrentDate);
+            return Error.Failure(description: "Не удалось инициализировать генератор PDF.");
+        }
     }
 
     private static void ComposeHeader(IContainer container, DailyExchangeRatesReport report)

@@ -1,8 +1,13 @@
-﻿using Infrastructure.Dto;
+﻿using Core.Domain.Models;
+using ErrorOr;
+using Infrastructure.Dto;
 
 namespace Core.Services;
 
 public interface ICbrClient
 {
-    public Task<ValCurs> GetValCursAsync(DateOnly date, CancellationToken cancellationToken = default);
+    public Task<ErrorOr<ExchangeRateReport>> GetExchangeRateReportAsync(
+        DateOnly date,
+        CancellationToken cancellationToken = default
+    );
 }
