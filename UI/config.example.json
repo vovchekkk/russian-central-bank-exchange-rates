@@ -1,7 +1,7 @@
 ﻿{
   "CbrClient": {
     "BaseUrl": "https://www.cbr.ru/",
-    "Timeout": "00:00:10"
+    "Timeout": "00:01:00"
   },
   "Cache": {
     "SlidingExpiration": "06:00:00",
@@ -14,6 +14,6 @@
     "Username": "your-login@yandex.ru",
     "Password": "your-app-password",
     "SenderEmail": "your-login@yandex.ru",
-    "Timeout": "00:00:15"
+    "Timeout": "00:01:00"
   }
 }
