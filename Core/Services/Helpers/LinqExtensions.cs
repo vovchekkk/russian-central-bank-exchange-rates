@@ -1,6 +1,6 @@
-﻿namespace Core.Services.Helpers;
+namespace Core.Services.Helpers;
 
-public static class LinqExtensions
+internal static class LinqExtensions
 {
     public static IEnumerable<TResult> LeftJoin<TOuter, TInner, TKey, TResult>(
         this IEnumerable<TOuter> outer,

@@ -8,7 +8,7 @@ public sealed record EmailAddress
 {
     private static readonly EmailAddressAttribute Validator = new();
 
-    public MailboxAddress Mailbox { get; }
+    internal MailboxAddress Mailbox { get; }
     public string Value => Mailbox.Address;
 
     private EmailAddress(MailboxAddress mailbox)

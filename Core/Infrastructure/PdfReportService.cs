@@ -11,7 +11,7 @@ using ErrorOr;
 
 namespace Core.Infrastructure;
 
-public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportService
+internal sealed class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportService
 {
     public async Task<ErrorOr<byte[]>> GenerateDailyReportAsync(
         DailyExchangeRatesReport report,

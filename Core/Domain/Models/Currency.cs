@@ -15,7 +15,7 @@ public sealed record Currency
         Name = name;
     }
 
-    public static ErrorOr<Currency> Create(ushort numCode, string? charCode, string? name)
+    internal static ErrorOr<Currency> Create(ushort numCode, string? charCode, string? name)
     {
         if (string.IsNullOrWhiteSpace(charCode))
             return Error.Validation(

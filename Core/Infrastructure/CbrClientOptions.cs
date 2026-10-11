@@ -1,8 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Core.Infrastructure;
 
-public class CbrClientOptions
+internal sealed class CbrClientOptions
 {
     public const string SectionName = "CbrClient";
     

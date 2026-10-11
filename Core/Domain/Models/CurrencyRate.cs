@@ -2,7 +2,7 @@ using ErrorOr;
 
 namespace Core.Domain.Models;
 
-public sealed record CurrencyRate
+internal sealed record CurrencyRate
 {
     public Currency Currency { get; }
     public decimal UnitRate { get; }

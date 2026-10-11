@@ -1,10 +1,9 @@
-﻿using Core.Domain.Models;
+using Core.Domain.Models;
 using ErrorOr;
-using Infrastructure.Dto;
 
 namespace Core.Services;
 
-public interface ICbrClient
+internal interface ICbrClient
 {
     public Task<ErrorOr<ExchangeRateReport>> GetExchangeRateReportAsync(
         DateOnly date,

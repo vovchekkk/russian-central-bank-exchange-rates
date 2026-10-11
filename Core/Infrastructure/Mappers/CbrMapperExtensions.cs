@@ -5,7 +5,7 @@ using ErrorOr;
 
 namespace Core.Infrastructure.Mappers;
 
-public static class CbrMapperExtensions
+internal static class CbrMapperExtensions
 {
     private static readonly CultureInfo RuCulture = new("ru-RU");
 

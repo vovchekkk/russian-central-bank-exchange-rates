@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Core.Infrastructure;
 
-public class CbrClient(
+internal sealed class CbrClient(
     HttpClient client,
     IOptions<CbrClientOptions> options,
     XmlSerializer serializer,

@@ -14,6 +14,7 @@ namespace Infrastructure.Dto
     
     
     [System.CodeDom.Compiler.GeneratedCodeAttribute("XmlSchemaClassGenerator", "3.0.1405.0")]
+    [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
     [System.SerializableAttribute()]
     [System.Xml.Serialization.XmlTypeAttribute("ValCurs", Namespace="", AnonymousType=true)]
     [System.Diagnostics.DebuggerStepThroughAttribute()]
@@ -57,6 +58,7 @@ namespace Infrastructure.Dto
     }
     
     [System.CodeDom.Compiler.GeneratedCodeAttribute("XmlSchemaClassGenerator", "3.0.1405.0")]
+    [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
     [System.SerializableAttribute()]
     [System.Xml.Serialization.XmlTypeAttribute("ValCursValute", Namespace="", AnonymousType=true)]
     [System.Diagnostics.DebuggerStepThroughAttribute()]

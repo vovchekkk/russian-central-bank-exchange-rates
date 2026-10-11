@@ -31,7 +31,7 @@ public sealed record DailyExchangeRatesReport
         AveragePercentChange = averagePercentChange;
     }
 
-    public static ErrorOr<Success> ValidateRequestedDate(DateOnly requestedDate)
+    internal static ErrorOr<Success> ValidateRequestedDate(DateOnly requestedDate)
     {
         if (requestedDate < ExchangeRateReport.MinCbrDate)
             return Error.Validation(
@@ -44,7 +44,7 @@ public sealed record DailyExchangeRatesReport
         return Result.Success;
     }
 
-    public static ErrorOr<DailyExchangeRatesReport> Create(
+    internal static ErrorOr<DailyExchangeRatesReport> Create(
         DateOnly requestedDate,
         ExchangeRateReport? currentReport,
         ExchangeRateReport? previousReport,

@@ -12,7 +12,7 @@ using MimeKit;
 
 namespace Core.Infrastructure;
 
-public class SmtpEmailService(
+internal sealed class SmtpEmailService(
     IOptions<SmtpOptions> options,
     ILogger<SmtpEmailService> logger
 ) : IEmailService

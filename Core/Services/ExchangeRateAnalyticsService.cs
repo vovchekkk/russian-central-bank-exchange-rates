@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Core.Services;
 
-public class ExchangeRateAnalyticsService(
+internal sealed class ExchangeRateAnalyticsService(
     ICbrClient cbrClient,
     ILogger<ExchangeRateAnalyticsService> logger
 ) : IExchangeRateAnalyticsService

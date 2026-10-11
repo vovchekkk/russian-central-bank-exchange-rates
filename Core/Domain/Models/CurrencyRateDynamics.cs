@@ -24,7 +24,7 @@ public sealed record CurrencyRateDynamics
         PercentChange = percentChange;
     }
 
-    public static ErrorOr<CurrencyRateDynamics> Create(CurrencyRate? current, CurrencyRate? previous)
+    internal static ErrorOr<CurrencyRateDynamics> Create(CurrencyRate? current, CurrencyRate? previous)
     {
         if (current is null)
             return Error.Validation(

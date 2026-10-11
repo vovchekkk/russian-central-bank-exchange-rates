@@ -1,8 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Core.Infrastructure;
 
-public class SmtpOptions
+internal sealed class SmtpOptions
 {
     public const string SectionName = "Smtp";
     

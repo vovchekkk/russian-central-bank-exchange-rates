@@ -2,7 +2,7 @@ using ErrorOr;
 
 namespace Core.Domain.Models;
 
-public sealed record ExchangeRateReport
+internal sealed record ExchangeRateReport
 {
     public static readonly DateOnly MinCbrDate = new(1992, 7, 2);
 
