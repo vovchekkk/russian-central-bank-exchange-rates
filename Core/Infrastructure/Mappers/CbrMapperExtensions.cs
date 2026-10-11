@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Core.Domain.Models;
 using Infrastructure.Dto;
 using ErrorOr;
@@ -11,32 +11,19 @@ public static class CbrMapperExtensions
 
     public static ErrorOr<CurrencyRate> ToDomain(this ValCursValute dto)
     {
-        if (string.IsNullOrWhiteSpace(dto.CharCode))
-            return Error.Validation(description: $"Отсутствует символьный код (CharCode) у валюты с NumCode '{dto.NumCode}'.");
-        
-        if (string.IsNullOrWhiteSpace(dto.Name))
-            return Error.Validation(description: $"Отсутствует название (Name) для валюты {dto.CharCode}.");
-        
-        if (!decimal.TryParse(dto.VunitRate, RuCulture, out var unitRate) || unitRate <= 0)
-        {
-            if (!decimal.TryParse(dto.Value, RuCulture, out var rawValue) || rawValue <= 0)
-                return Error.Validation(
-                    description: $"Некорректный курс Value ('{dto.Value}') для валюты {dto.CharCode}.");
-            
-            if (dto.Nominal == 0)
-                return Error.Validation(
-                    description: $"Некорректный номинал ({dto.Nominal}) для валюты {dto.CharCode}.");
-            
-            unitRate = rawValue / dto.Nominal;
-        }
-        
-        return new CurrencyRate
-        {
-            NumCode = dto.NumCode,
-            CharCode = dto.CharCode.Trim().ToUpperInvariant(),
-            Name = dto.Name.Trim(),
-            UnitRate = unitRate
-        };
+        var currencyResult = Currency.Create(dto.NumCode, dto.CharCode, dto.Name);
+        if (currencyResult.IsError)
+            return currencyResult.Errors;
+
+        decimal? unitRate = decimal.TryParse(dto.VunitRate, RuCulture, out var parsedUnitRate)
+            ? parsedUnitRate
+            : null;
+
+        decimal? rawValue = decimal.TryParse(dto.Value, RuCulture, out var parsedValue)
+            ? parsedValue
+            : null;
+
+        return CurrencyRate.Create(currencyResult.Value, unitRate, rawValue, dto.Nominal);
     }
 
     public static ErrorOr<ExchangeRateReport> ToDomain(this ValCurs dto)
@@ -47,25 +34,18 @@ public static class CbrMapperExtensions
                 description: $"Некорректный формат даты в ответе ЦБ РФ: '{dto.Date}'.");
         }
         
-        if (dto.Valute is null || dto.Valute.Count == 0)
+        var rates = new List<CurrencyRate>(dto.Valute?.Count ?? 0);
+        if (dto.Valute is not null)
         {
-            return Error.NotFound(
-                description: $"В ответе ЦБ РФ за {dto.Date} отсутствует список валют.");
+            foreach (var valuteDto in dto.Valute)
+            {
+                var rateResult = valuteDto.ToDomain();
+                if (rateResult.IsError)
+                    return rateResult.Errors;
+                rates.Add(rateResult.Value);
+            }
         }
         
-        var rates = new List<CurrencyRate>(dto.Valute.Count);
-        foreach (var valuteDto in dto.Valute)
-        {
-            var rateResult = valuteDto.ToDomain();
-            if (rateResult.IsError)
-                return rateResult.Errors;
-            rates.Add(rateResult.Value);
-        }
-        
-        return new ExchangeRateReport
-        {
-            Date = date,
-            Rates = rates
-        };
+        return ExchangeRateReport.Create(date, rates);
     }
 }

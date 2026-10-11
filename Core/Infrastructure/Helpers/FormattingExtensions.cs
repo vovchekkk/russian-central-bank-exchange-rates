@@ -17,7 +17,7 @@ public static class FormattingExtensions
 
     public static string FormatSummaryLine(this CurrencyRateDynamics item)
         =>
-            $"• {item.CharCode} ({item.Name}): {item.PercentChange.FormatSigned("%")} ({item.AbsoluteChange.FormatSigned(" руб.")})";
+            $"• {item.Currency.CharCode} ({item.Currency.Name}): {item.PercentChange.FormatSigned("%")} ({item.AbsoluteChange.FormatSigned(" руб.")})";
 
     public static string FormatSigned(this decimal value, string suffix = "")
     {

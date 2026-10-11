@@ -1,4 +1,4 @@
-﻿using Core.Domain.Models;
+using Core.Domain.Models;
 using ErrorOr;
 
 namespace Core.Services;
@@ -6,7 +6,7 @@ namespace Core.Services;
 public interface IEmailService
 {
     public Task<ErrorOr<Success>> SendDailyReportAsync(
-        string recipientEmail,
+        EmailAddress recipientEmail,
         DailyExchangeRatesReport report,
         byte[] pdfAttachment,
         CancellationToken cancellationToken = default

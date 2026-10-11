@@ -18,9 +18,6 @@ public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportServ
         CancellationToken cancellationToken = default
     )
     {
-        if (report.AllRates.Count == 0)
-            return Error.Validation(description: "Нет данных для формирования PDF-отчёта.");
-
         try
         {
             logger.LogInformation("Генерация PDF-отчёта за {Date:dd.MM.yyyy}", report.CurrentDate);
@@ -169,8 +166,8 @@ public class PdfReportService(ILogger<PdfReportService> logger) : IPdfReportServ
                     _ => Colors.Black
                 };
 
-                BodyCell(table.Cell(), rate.CharCode);
-                BodyCell(table.Cell(), rate.Name);
+                BodyCell(table.Cell(), rate.Currency.CharCode);
+                BodyCell(table.Cell(), rate.Currency.Name);
                 BodyCell(table.Cell(), rate.CurrentUnitRate.FormatRate(), alignRight: true);
                 BodyCell(table.Cell(), rate.PreviousUnitRate.FormatRate(), alignRight: true);
                 BodyCell(table.Cell(), rate.AbsoluteChange.FormatSigned(), alignRight: true, color: changeColor);

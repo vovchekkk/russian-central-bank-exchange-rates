@@ -94,17 +94,11 @@ public class CbrClient(
                 return Error.Failure(description: "Не удалось десериализовать ответ от сервера ЦБ РФ.");
             }
             
-            if (string.IsNullOrWhiteSpace(valCurs.Date) || valCurs.Valute is null || valCurs.Valute.Count == 0)
-            {
-                logger.LogWarning("В ответе ЦБ РФ за {Date} отсутствуют курсы валют", dateFormatted);
-                return Error.NotFound(description: $"На дату {dateFormatted} курсы валют ЦБ РФ отсутствуют.");
-            }
-            
             var reportResult = valCurs.ToDomain();
             if (reportResult.IsError)
             {
                 logger.LogWarning(
-                    "Ошибка валидации данных в ответе ЦБ РФ за {Date}: {Error}",
+                    "Не удалось сформировать отчёт из ответа ЦБ РФ за {Date}: {Error}",
                     dateFormatted,
                     reportResult.FirstError.Description
                 );

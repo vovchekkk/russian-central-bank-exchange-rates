@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using ErrorOr;
 using System.Net.Sockets;
 using System.Text;
@@ -18,10 +17,8 @@ public class SmtpEmailService(
     ILogger<SmtpEmailService> logger
 ) : IEmailService
 {
-    private static readonly EmailAddressAttribute EmailValidator = new();
-
     public async Task<ErrorOr<Success>> SendDailyReportAsync(
-        string recipientEmail,
+        EmailAddress recipientEmail,
         DailyExchangeRatesReport report,
         byte[] pdfAttachment,
         CancellationToken cancellationToken = default
@@ -40,14 +37,6 @@ public class SmtpEmailService(
             );
         }
 
-        if (string.IsNullOrWhiteSpace(recipientEmail) ||
-            !EmailValidator.IsValid(recipientEmail) ||
-            !MailboxAddress.TryParse(recipientEmail, out var recipientAddress))
-            return Error.Validation(description: "Указан некорректный формат email-адреса получателя.");
-
-        if (report.AllRates.Count == 0)
-            return Error.Validation(description: "Нет данных в отчёте для отправки письма.");
-
         if (pdfAttachment.Length == 0)
             return Error.Validation(description: "Не удалось прикрепить PDF-отчёт: файл пуст.");
 
@@ -56,9 +45,9 @@ public class SmtpEmailService(
             logger.LogInformation(
                 "Отправка отчёта за {Date:dd.MM.yyyy} на адрес {Recipient}",
                 report.CurrentDate,
-                recipientAddress.Address);
+                recipientEmail.Value);
 
-            var message = CreateMimeMessage(recipientAddress, smtpOptions.SenderEmail, report, pdfAttachment);
+            var message = CreateMimeMessage(recipientEmail, smtpOptions.SenderEmail, report, pdfAttachment);
 
             using var client = new SmtpClient();
             client.Timeout = (int)smtpOptions.Timeout.TotalMilliseconds;
@@ -68,7 +57,7 @@ public class SmtpEmailService(
             await client.SendAsync(message, cancellationToken);
             await client.DisconnectAsync(quit: true, cancellationToken);
 
-            logger.LogInformation("Письмо успешно отправлено на адрес {Recipient}", recipientAddress.Address);
+            logger.LogInformation("Письмо успешно отправлено на адрес {Recipient}", recipientEmail.Value);
             return Result.Success;
         }
         catch (Exception ex) when (ex is AuthenticationException or SaslException)
@@ -82,7 +71,7 @@ public class SmtpEmailService(
             logger.LogError(
                 ex,
                 "SMTP-сервер отклонил отправку письма на {Recipient} (код: {StatusCode})",
-                recipientAddress.Address,
+                recipientEmail.Value,
                 ex.StatusCode
             );
             return Error.Failure(
@@ -110,7 +99,7 @@ public class SmtpEmailService(
     }
 
     private static MimeMessage CreateMimeMessage(
-        MailboxAddress recipientEmail,
+        EmailAddress recipientEmail,
         string senderEmail,
         DailyExchangeRatesReport report,
         byte[] pdfAttachment
@@ -119,7 +108,7 @@ public class SmtpEmailService(
         var message = new MimeMessage();
 
         message.From.Add(MailboxAddress.Parse(senderEmail));
-        message.To.Add(recipientEmail);
+        message.To.Add(recipientEmail.Mailbox);
         message.Subject = $"Курсы валют ЦБ РФ на {report.CurrentDate:dd.MM.yyyy}";
 
         var bodyBuilder = new BodyBuilder { TextBody = BuildTextSummary(report) };

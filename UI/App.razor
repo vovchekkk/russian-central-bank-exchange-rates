@@ -142,8 +142,8 @@
                         @foreach (var item in _report.TopGrown)
                         {
                             <li class="top-item">
-                                <span class="top-item-name" title="@item.Name">
-                                    <span class="top-item-code">@item.CharCode</span>@item.Name
+                                <span class="top-item-name" title="@item.Currency.Name">
+                                    <span class="top-item-code">@item.Currency.CharCode</span>@item.Currency.Name
                                 </span>
                                 <span class="rate-up">@item.PercentChange.FormatSigned("%")</span>
                             </li>
@@ -164,8 +164,8 @@
                         @foreach (var item in _report.TopFallen)
                         {
                             <li class="top-item">
-                                <span class="top-item-name" title="@item.Name">
-                                    <span class="top-item-code">@item.CharCode</span>@item.Name
+                                <span class="top-item-name" title="@item.Currency.Name">
+                                    <span class="top-item-code">@item.Currency.CharCode</span>@item.Currency.Name
                                 </span>
                                 <span class="rate-down">@item.PercentChange.FormatSigned("%")</span>
                             </li>
@@ -214,8 +214,8 @@
                         {
                             var changeClass = GetChangeCssClass(rate.PercentChange);
                             <tr>
-                                <td><span class="code-pill">@rate.CharCode</span></td>
-                                <td>@rate.Name</td>
+                                <td><span class="code-pill">@rate.Currency.CharCode</span></td>
+                                <td>@rate.Currency.Name</td>
                                 <td class="num"><strong>@rate.CurrentUnitRate.FormatRate()</strong></td>
                                 <td class="num rate-neutral">@rate.PreviousUnitRate.FormatRate()</td>
                                 <td class="num @changeClass">@rate.AbsoluteChange.FormatSigned()</td>
@@ -284,16 +284,16 @@
             {
                 var term = _searchQuery.Trim();
                 query = query.Where(r =>
-                    r.CharCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                    r.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+                    r.Currency.CharCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.Currency.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
             }
 
             return (_sortColumn, _sortAscending) switch
             {
-                (SortColumn.CharCode, true) => query.OrderBy(r => r.CharCode),
-                (SortColumn.CharCode, false) => query.OrderByDescending(r => r.CharCode),
-                (SortColumn.Name, true) => query.OrderBy(r => r.Name),
-                (SortColumn.Name, false) => query.OrderByDescending(r => r.Name),
+                (SortColumn.CharCode, true) => query.OrderBy(r => r.Currency.CharCode),
+                (SortColumn.CharCode, false) => query.OrderByDescending(r => r.Currency.CharCode),
+                (SortColumn.Name, true) => query.OrderBy(r => r.Currency.Name),
+                (SortColumn.Name, false) => query.OrderByDescending(r => r.Currency.Name),
                 (SortColumn.CurrentRate, true) => query.OrderBy(r => r.CurrentUnitRate),
                 (SortColumn.CurrentRate, false) => query.OrderByDescending(r => r.CurrentUnitRate),
                 (SortColumn.PreviousRate, true) => query.OrderBy(r => r.PreviousUnitRate),
@@ -350,6 +350,15 @@
 
         _errorMessage = null;
         _successMessage = null;
+
+        var emailResult = EmailAddress.Create(_recipientEmail);
+        if (emailResult.IsError)
+        {
+            _errorMessage = emailResult.FirstError.Description;
+            return;
+        }
+
+        var recipient = emailResult.Value;
         _isSendFlow = true;
 
         try
@@ -382,14 +391,14 @@
             // 3. Отправка письма по SMTP
             await SetStageAsync(OperationStage.SendingEmail);
 
-            var sendResult = await EmailService.SendDailyReportAsync(_recipientEmail.Trim(), _report, pdfResult.Value);
+            var sendResult = await EmailService.SendDailyReportAsync(recipient, _report, pdfResult.Value);
             if (sendResult.IsError)
             {
                 _errorMessage = sendResult.FirstError.Description;
                 return;
             }
 
-            _successMessage = $"Отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сформирован и отправлен на {_recipientEmail.Trim()}.";
+            _successMessage = $"Отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сформирован и отправлен на {recipient.Value}.";
         }
         finally
         {
