@@ -1,4 +1,4 @@
-using Core.Services.Helpers;
+using Core.Domain.Helpers;
 using ErrorOr;
 
 namespace Core.Domain.Models;

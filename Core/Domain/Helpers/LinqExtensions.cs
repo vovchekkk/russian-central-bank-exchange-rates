@@ -1,4 +1,4 @@
-namespace Core.Services.Helpers;
+namespace Core.Domain.Helpers;
 
 internal static class LinqExtensions
 {
