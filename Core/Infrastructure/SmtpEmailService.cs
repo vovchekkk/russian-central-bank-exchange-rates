@@ -113,8 +113,7 @@ internal sealed class SmtpEmailService(
 
         var bodyBuilder = new BodyBuilder { TextBody = BuildTextSummary(report) };
 
-        var fileName = $"cbr-rates-{report.CurrentDate:yyyy-MM-dd}.pdf";
-        bodyBuilder.Attachments.Add(fileName, pdfAttachment, new ContentType("application", "pdf"));
+        bodyBuilder.Attachments.Add(report.FormatPdfFileName(), pdfAttachment, new ContentType("application", "pdf"));
 
         message.Body = bodyBuilder.ToMessageBody();
 

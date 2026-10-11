@@ -1,6 +1,6 @@
 using System.Globalization;
 using Core.Domain.Models;
-using Infrastructure.Dto;
+using Core.Infrastructure.Dto;
 using ErrorOr;
 
 namespace Core.Infrastructure.Mappers;

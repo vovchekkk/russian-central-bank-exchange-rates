@@ -12,6 +12,9 @@ public static class FormattingExtensions
             ? $"Дата курса ЦБ РФ: {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})"
             : $"На дату {report.RequestedDate:dd.MM.yyyy} действует курс от {report.CurrentDate:dd.MM.yyyy} (в сравнении с {report.PreviousDate:dd.MM.yyyy})";
 
+    public static string FormatPdfFileName(this DailyExchangeRatesReport report)
+        => $"cbr-rates-{report.CurrentDate:yyyy-MM-dd}.pdf";
+
     public static string FormatAveragePercentChange(this DailyExchangeRatesReport report)
         => $"Среднее изменение по всем валютам: {report.AveragePercentChange.FormatSigned("%", "Н/Д")}";
 

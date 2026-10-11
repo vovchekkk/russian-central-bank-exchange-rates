@@ -1,7 +1,7 @@
 using System.Xml.Serialization;
 using Core.Infrastructure;
+using Core.Infrastructure.Dto;
 using Core.Services;
-using Infrastructure.Dto;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -29,13 +29,20 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
         
+        services.AddOptions<CacheOptions>()
+            .Bind(configuration.GetSection(CacheOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        
+        services.AddMemoryCache();
         services.AddSingleton(new XmlSerializer(typeof(ValCurs)));
 
-        services.AddHttpClient<ICbrClient, CbrClient>(client =>
+        services.AddHttpClient<CbrClient>(client =>
         {
             client.DefaultRequestHeaders.Add("Accept", "application/xml");
             client.DefaultRequestHeaders.Add("User-Agent", "RussianCentralBankExchangeRates/1.0");
         });
+        services.AddTransient<ICbrClient, CachedCbrClient>();
 
         services.AddTransient<IExchangeRateAnalyticsService, ExchangeRateAnalyticsService>();
         services.AddSingleton<IPdfReportService, PdfReportService>();

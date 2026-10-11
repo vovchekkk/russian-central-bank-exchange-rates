@@ -2,10 +2,10 @@ using System.Globalization;
 using System.Text;
 using System.Xml.Serialization;
 using Core.Domain.Models;
+using Core.Infrastructure.Dto;
 using Core.Infrastructure.Mappers;
 using ErrorOr;
 using Core.Services;
-using Infrastructure.Dto;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

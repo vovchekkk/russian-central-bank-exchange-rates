@@ -1,2 +1,2 @@
 dto-gen:
-	xscgen -o ./Core/Infrastructure/Dto -n =Infrastructure.Dto ./Core/Infrastructure/schema.xsd
+	xscgen -n =Core.Infrastructure.Dto --nh ./Core/Infrastructure/schema.xsd
