@@ -96,7 +96,7 @@ body {
 /* Панель управления */
 .controls-grid {
     display: grid;
-    grid-template-columns: 1fr 1.35fr;
+    grid-template-columns: 1.15fr 1.2fr;
     gap: 16px;
 }
 
@@ -194,6 +194,17 @@ body {
 
 .btn-secondary:hover:not(:disabled) {
     background: #1e293b;
+}
+
+.btn-outline {
+    background: #ffffff;
+    color: var(--text-primary);
+    border: 1px solid #cbd5e1;
+}
+
+.btn-outline:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #94a3b8;
 }
 
 /* Индикация выполнения операций */
@@ -505,6 +516,11 @@ body {
     border-top-color: #ffffff;
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
+}
+
+.spinner-sm.spinner-dark {
+    border-color: rgba(15, 23, 42, 0.25);
+    border-top-color: var(--text-primary);
 }
 
 @keyframes spin {

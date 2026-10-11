@@ -2,6 +2,7 @@
 @inject IPdfReportService PdfReportService
 @inject IEmailService EmailService
 @inject StartupConfigState ConfigState
+@inject Photino.Blazor.PhotinoBlazorApp PhotinoApp
 
 <div class="app-container">
     <header class="app-header">
@@ -29,7 +30,7 @@
 
     <section class="controls-grid">
         <div class="control-card">
-            <div class="control-card-title">Параметры выгрузки</div>
+            <div class="control-card-title">Параметры выгрузки и PDF</div>
             <div class="control-row">
                 <input type="date"
                        class="form-input"
@@ -48,6 +49,18 @@
                     }
                     <span>Загрузить данные</span>
                 </button>
+
+                <button type="button"
+                        class="btn btn-outline"
+                        @onclick="SavePdfReportAsync"
+                        disabled="@(!CanUseReportActions)"
+                        title="@(IsReportReadyForSelectedDate ? "Сформировать и сохранить PDF-отчёт на компьютер (работает без интернета)" : "Сначала нажмите «Загрузить данные» для выбранной даты")">
+                    @if (_isSavePdfFlow && _currentStage == OperationStage.GeneratingPdf)
+                    {
+                        <span class="spinner-sm spinner-dark"></span>
+                    }
+                    <span>Сохранить PDF</span>
+                </button>
             </div>
         </div>
 
@@ -64,8 +77,9 @@
                 <button type="button"
                         class="btn btn-secondary"
                         @onclick="SendReportAsync"
-                        disabled="@IsBusy">
-                    @if (_currentStage is OperationStage.GeneratingPdf or OperationStage.SendingEmail)
+                        disabled="@(!CanUseReportActions)"
+                        title="@(IsReportReadyForSelectedDate ? "Сформировать PDF-отчёт и отправить на указанный адрес" : "Сначала нажмите «Загрузить данные» для выбранной даты")">
+                    @if (_isSendFlow && _currentStage is OperationStage.GeneratingPdf or OperationStage.SendingEmail)
                     {
                         <span class="spinner-sm"></span>
                     }
@@ -83,7 +97,11 @@
 
             <div class="operation-steps">
                 <span class="step-pill @GetStepClass(OperationStage.LoadingRates)">1. Загрузка</span>
-                @if (_isSendFlow)
+                @if (_isSavePdfFlow)
+                {
+                    <span class="step-pill @GetStepClass(OperationStage.GeneratingPdf)">2. Формирование PDF</span>
+                }
+                else if (_isSendFlow)
                 {
                     <span class="step-pill @GetStepClass(OperationStage.GeneratingPdf)">2. Формирование</span>
                     <span class="step-pill @GetStepClass(OperationStage.SendingEmail)">3. Отправка</span>
@@ -108,7 +126,17 @@
         </div>
     }
 
-    @if (_report is not null && _report.RequestedDate != _report.CurrentDate)
+    @if (_report is not null && _report.RequestedDate != _loadedForDate)
+    {
+        <div class="alert alert-warning">
+            <div>
+                <strong>Автономный режим (нет связи с сервером ЦБ РФ):</strong> не удалось загрузить данные на выбранную дату <strong>@_loadedForDate.ToString("dd.MM.yyyy")</strong>.
+                Отображён последний сохранённый в кэше отчёт (курс от <strong>@_report.CurrentDate.ToString("dd.MM.yyyy")</strong>
+                в сравнении с <strong>@_report.PreviousDate.ToString("dd.MM.yyyy")</strong>).
+            </div>
+        </div>
+    }
+    else if (_report is not null && _report.RequestedDate != _report.CurrentDate)
     {
         <div class="alert alert-warning">
             <div>
@@ -256,12 +284,14 @@
     }
 
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _loadedForDate;
     private DailyExchangeRatesReport? _report;
     private string _recipientEmail = string.Empty;
     private string _searchQuery = string.Empty;
 
     private OperationStage _currentStage = OperationStage.None;
     private bool _isSendFlow;
+    private bool _isSavePdfFlow;
     private string? _errorMessage;
     private string? _successMessage;
 
@@ -269,6 +299,8 @@
     private bool _sortAscending = true;
 
     private bool IsBusy => _currentStage != OperationStage.None;
+    private bool IsReportReadyForSelectedDate => _report is not null && _loadedForDate == _selectedDate;
+    private bool CanUseReportActions => !IsBusy && IsReportReadyForSelectedDate;
     private static string MaxDateString => DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
 
     private IEnumerable<CurrencyRateDynamics> FilteredRates
@@ -323,6 +355,7 @@
         _errorMessage = null;
         _successMessage = null;
         _isSendFlow = false;
+        _isSavePdfFlow = false;
 
         await SetStageAsync(OperationStage.LoadingRates);
 
@@ -336,6 +369,7 @@
             }
 
             _report = result.Value;
+            _loadedForDate = _selectedDate;
         }
         finally
         {
@@ -343,9 +377,58 @@
         }
     }
 
+    private async Task SavePdfReportAsync()
+    {
+        if (!CanUseReportActions || _report is null)
+            return;
+
+        _errorMessage = null;
+        _successMessage = null;
+
+        var defaultDir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        var savePath = await PhotinoApp.MainWindow.ShowSaveFileAsync(
+            title: $"Сохранить PDF-отчёт ({_report.FormatPdfFileName()})",
+            defaultPath: defaultDir,
+            filters: [("PDF-документ (*.pdf)", ["pdf"])]
+        );
+
+        if (string.IsNullOrWhiteSpace(savePath))
+            return;
+
+        if (!savePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            savePath += ".pdf";
+
+        _isSavePdfFlow = true;
+
+        try
+        {
+            await SetStageAsync(OperationStage.GeneratingPdf);
+
+            var pdfResult = await PdfReportService.GenerateDailyReportAsync(_report);
+            if (pdfResult.IsError)
+            {
+                _errorMessage = pdfResult.FirstError.Description;
+                return;
+            }
+
+            await File.WriteAllBytesAsync(savePath, pdfResult.Value);
+            _successMessage = $"PDF-отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сохранён: {savePath}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _errorMessage = $"Не удалось сохранить PDF-файл: {ex.Message}";
+        }
+        finally
+        {
+            _currentStage = OperationStage.None;
+            _isSavePdfFlow = false;
+        }
+    }
+
     private async Task SendReportAsync()
     {
-        if (IsBusy)
+        if (!CanUseReportActions || _report is null)
             return;
 
         _errorMessage = null;
@@ -363,22 +446,6 @@
 
         try
         {
-            // 1. Загрузка (если данные на выбранную дату ещё не загружены)
-            if (_report is null || _report.RequestedDate != _selectedDate)
-            {
-                await SetStageAsync(OperationStage.LoadingRates);
-
-                var analyticsResult = await AnalyticsService.GetDailyAnalyticsAsync(_selectedDate);
-                if (analyticsResult.IsError)
-                {
-                    _errorMessage = analyticsResult.FirstError.Description;
-                    return;
-                }
-
-                _report = analyticsResult.Value;
-            }
-
-            // 2. Формирование PDF-отчёта
             await SetStageAsync(OperationStage.GeneratingPdf);
 
             var pdfResult = await PdfReportService.GenerateDailyReportAsync(_report);
@@ -388,7 +455,6 @@
                 return;
             }
 
-            // 3. Отправка письма по SMTP
             await SetStageAsync(OperationStage.SendingEmail);
 
             var sendResult = await EmailService.SendDailyReportAsync(recipient, _report, pdfResult.Value);

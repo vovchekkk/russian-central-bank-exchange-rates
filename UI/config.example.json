@@ -3,6 +3,11 @@
     "BaseUrl": "https://www.cbr.ru/",
     "Timeout": "00:00:10"
   },
+  "Cache": {
+    "SlidingExpiration": "06:00:00",
+    "AbsoluteExpiration": "1.00:00:00",
+    "FilePath": "cache/last-report.json"
+  },
   "Smtp": {
     "Host": "smtp.yandex.ru",
     "Port": 465,
