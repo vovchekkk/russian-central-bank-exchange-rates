@@ -44,7 +44,7 @@ internal sealed class CbrClient(
             );
         }
 
-        var dateFormatted = date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        var dateFormatted = date.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
         var relativeUrl = $"scripts/XML_daily.asp?date_req={dateFormatted}";
 
         if (!Uri.TryCreate(cbrOptions.BaseUrl, UriKind.Absolute, out var baseUri) ||

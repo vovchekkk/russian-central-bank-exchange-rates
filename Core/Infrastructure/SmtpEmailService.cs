@@ -37,6 +37,14 @@ internal sealed class SmtpEmailService(
             );
         }
 
+        var senderResult = EmailAddress.Create(smtpOptions.SenderEmail);
+        if (senderResult.IsError)
+        {
+            logger.LogError("Некорректный адрес отправителя (SenderEmail) в конфигурационном файле: {SenderEmail}", smtpOptions.SenderEmail);
+            return Error.Failure(
+                description: "Некорректный адрес отправителя (SenderEmail) в конфигурационном файле (config.json).");
+        }
+
         if (pdfAttachment.Length == 0)
             return Error.Validation(description: "Не удалось прикрепить PDF-отчёт: файл пуст.");
 
@@ -47,7 +55,7 @@ internal sealed class SmtpEmailService(
                 report.CurrentDate,
                 recipientEmail.Value);
 
-            var message = CreateMimeMessage(recipientEmail, smtpOptions.SenderEmail, report, pdfAttachment);
+            var message = CreateMimeMessage(recipientEmail, senderResult.Value, report, pdfAttachment);
 
             using var client = new SmtpClient();
             client.Timeout = (int)smtpOptions.Timeout.TotalMilliseconds;
@@ -100,14 +108,14 @@ internal sealed class SmtpEmailService(
 
     private static MimeMessage CreateMimeMessage(
         EmailAddress recipientEmail,
-        string senderEmail,
+        EmailAddress senderEmail,
         DailyExchangeRatesReport report,
         byte[] pdfAttachment
     )
     {
         var message = new MimeMessage();
 
-        message.From.Add(MailboxAddress.Parse(senderEmail));
+        message.From.Add(senderEmail.Mailbox);
         message.To.Add(recipientEmail.Mailbox);
         message.Subject = $"Курсы валют ЦБ РФ на {report.CurrentDate:dd.MM.yyyy}";
 
