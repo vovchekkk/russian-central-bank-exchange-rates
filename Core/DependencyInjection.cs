@@ -28,7 +28,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(SmtpOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        
+
         services.AddOptions<CacheOptions>()
             .Bind(configuration.GetSection(CacheOptions.SectionName))
             .ValidateDataAnnotations()
@@ -44,7 +44,10 @@ public static class DependencyInjection
         });
         services.AddTransient<ICbrClient, CachedCbrClient>();
 
-        services.AddTransient<IExchangeRateAnalyticsService, ExchangeRateAnalyticsService>();
+        services.AddTransient<ExchangeRateAnalyticsService>();
+        services.AddSingleton<LastReportFileCache>();
+        services.AddSingleton<IExchangeRateAnalyticsService, CachedExchangeRateAnalyticsService>();
+        
         services.AddSingleton<IPdfReportService, PdfReportService>();
         services.AddSingleton<IEmailService, SmtpEmailService>();
 
