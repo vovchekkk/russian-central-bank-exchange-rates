@@ -52,7 +52,7 @@ internal sealed class SmtpEmailService(
         {
             logger.LogInformation(
                 "Отправка отчёта за {Date:dd.MM.yyyy} на адрес {Recipient}",
-                report.CurrentDate,
+                report.RequestedDate,
                 recipientEmail.Value);
 
             var message = CreateMimeMessage(recipientEmail, senderResult.Value, report, pdfAttachment);
@@ -117,7 +117,7 @@ internal sealed class SmtpEmailService(
 
         message.From.Add(senderEmail.Mailbox);
         message.To.Add(recipientEmail.Mailbox);
-        message.Subject = $"Курсы валют ЦБ РФ на {report.CurrentDate:dd.MM.yyyy}";
+        message.Subject = $"Курсы валют ЦБ РФ на {report.RequestedDate:dd.MM.yyyy}";
 
         var bodyBuilder = new BodyBuilder { TextBody = BuildTextSummary(report) };
 
