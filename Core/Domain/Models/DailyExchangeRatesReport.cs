@@ -5,9 +5,12 @@ namespace Core.Domain.Models;
 
 public sealed record DailyExchangeRatesReport
 {
+    internal ExchangeRateReport CurrentReport { get; }
+    internal ExchangeRateReport PreviousReport { get; }
+
     public DateOnly RequestedDate { get; }
-    public DateOnly CurrentDate { get; }
-    public DateOnly PreviousDate { get; }
+    public DateOnly CurrentDate => CurrentReport.Date;
+    public DateOnly PreviousDate => PreviousReport.Date;
     public IReadOnlyList<CurrencyRateDynamics> AllRates { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopGrown { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopFallen { get; }
@@ -15,16 +18,16 @@ public sealed record DailyExchangeRatesReport
 
     private DailyExchangeRatesReport(
         DateOnly requestedDate,
-        DateOnly currentDate,
-        DateOnly previousDate,
+        ExchangeRateReport currentReport,
+        ExchangeRateReport previousReport,
         IReadOnlyList<CurrencyRateDynamics> allRates,
         IReadOnlyList<CurrencyRateDynamics> topGrown,
         IReadOnlyList<CurrencyRateDynamics> topFallen,
         decimal? averagePercentChange)
     {
         RequestedDate = requestedDate;
-        CurrentDate = currentDate;
-        PreviousDate = previousDate;
+        CurrentReport = currentReport;
+        PreviousReport = previousReport;
         AllRates = allRates;
         TopGrown = topGrown;
         TopFallen = topFallen;
@@ -65,6 +68,10 @@ public sealed record DailyExchangeRatesReport
         if (topCount <= 0)
             return Error.Validation(
                 description: "Количество валют в выборке Топ должно быть больше нуля.");
+
+        if (currentReport.Date > requestedDate)
+            return Error.Validation(
+                description: $"Дата текущего курса ({currentReport.Date:dd.MM.yyyy}) не может быть позже запрошенной даты ({requestedDate:dd.MM.yyyy}).");
 
         if (currentReport.Date <= previousReport.Date)
             return Error.Validation(
@@ -108,8 +115,8 @@ public sealed record DailyExchangeRatesReport
 
         return new DailyExchangeRatesReport(
             requestedDate,
-            currentReport.Date,
-            previousReport.Date,
+            currentReport,
+            previousReport,
             readOnlyDynamics,
             topGrown,
             topFallen,
