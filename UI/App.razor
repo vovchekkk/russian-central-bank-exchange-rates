@@ -141,7 +141,7 @@
         <div class="alert alert-warning">
             <div>
                 На выбранную дату <strong>@_report.RequestedDate.ToString("dd.MM.yyyy")</strong> ЦБ РФ не устанавливал новых котировок.
-                Отображены официальные курсы, действующие с <strong>@_report.CurrentDate.ToString("dd.MM.yyyy")</strong>
+                В отчёте отображены официальные курсы, действующие с <strong>@_report.CurrentDate.ToString("dd.MM.yyyy")</strong>
                 (в сравнении с <strong>@_report.PreviousDate.ToString("dd.MM.yyyy")</strong>).
             </div>
         </div>
@@ -413,7 +413,7 @@
             }
 
             await File.WriteAllBytesAsync(savePath, pdfResult.Value);
-            _successMessage = $"PDF-отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сохранён: {savePath}";
+            _successMessage = $"PDF-отчёт на {_report.RequestedDate:dd.MM.yyyy} успешно сохранён: {savePath}";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -464,7 +464,7 @@
                 return;
             }
 
-            _successMessage = $"Отчёт за {_report.CurrentDate:dd.MM.yyyy} успешно сформирован и отправлен на {recipient.Value}.";
+            _successMessage = $"Отчёт на {_report.RequestedDate:dd.MM.yyyy} успешно сформирован и отправлен на {recipient.Value}.";
         }
         finally
         {
@@ -483,7 +483,7 @@
     private string GetStageText() => _currentStage switch
     {
         OperationStage.LoadingRates => $"Загрузка курсов валют ЦБ РФ на {_selectedDate:dd.MM.yyyy}...",
-        OperationStage.GeneratingPdf => $"Формирование PDF-отчёта за {_report?.CurrentDate:dd.MM.yyyy}...",
+        OperationStage.GeneratingPdf => $"Формирование PDF-отчёта на {_report?.RequestedDate:dd.MM.yyyy}...",
         OperationStage.SendingEmail => $"Отправка отчёта на адрес {_recipientEmail}...",
         _ => string.Empty
     };
