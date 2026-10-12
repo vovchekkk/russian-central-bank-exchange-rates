@@ -5,19 +5,17 @@ namespace Core.Domain.Models;
 
 public sealed record DailyExchangeRatesReport
 {
-    public const int DefaultTopCount = 3;
-    public const int DefaultTrendDaysCount = 7;
+    internal const int DefaultTopCount = 3;
+    internal const int DefaultTrendDaysCount = 7;
 
-    public static readonly IReadOnlyList<Currency> DefaultTrendCurrencies = [Currency.Usd, Currency.Eur];
+    internal static readonly IReadOnlyList<Currency> DefaultTrendCurrencies = [Currency.Usd, Currency.Eur];
+
+    public static DateOnly MinDate => ExchangeRateReport.MinCbrDate;
 
     internal IReadOnlyList<ExchangeRateReport> HistoricalReports { get; }
     internal ExchangeRateReport CurrentReport => HistoricalReports[0];
     internal ExchangeRateReport PreviousReport => HistoricalReports[1];
-
-    public DateOnly RequestedDate { get; }
-    public DateOnly CurrentDate => CurrentReport.Date;
-    public DateOnly PreviousDate => PreviousReport.Date;
-    public DateOnly WindowStartDate
+    internal DateOnly WindowStartDate
     {
         get
         {
@@ -25,13 +23,17 @@ public sealed record DailyExchangeRatesReport
             return start < ExchangeRateReport.MinCbrDate ? ExchangeRateReport.MinCbrDate : start;
         }
     }
-    public int ExpectedTrendDaysCount => RequestedDate.DayNumber - WindowStartDate.DayNumber + 1;
+    internal int ExpectedTrendDaysCount => RequestedDate.DayNumber - WindowStartDate.DayNumber + 1;
+    internal IReadOnlyList<CurrencyRateTrend> WeeklyTrends { get; }
+
+    public DateOnly RequestedDate { get; }
+    public DateOnly CurrentDate => CurrentReport.Date;
+    public DateOnly PreviousDate => PreviousReport.Date;
     public bool IsHistoryComplete => HistoricalReports[^1].Date <= WindowStartDate;
     public IReadOnlyList<CurrencyRateDynamics> AllRates { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopGrown { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopFallen { get; }
     public decimal? AveragePercentChange { get; }
-    public IReadOnlyList<CurrencyRateTrend> WeeklyTrends { get; }
 
     private DailyExchangeRatesReport(
         DateOnly requestedDate,

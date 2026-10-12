@@ -1,3 +1,4 @@
+@using Core.Domain.Helpers
 @inject IExchangeRateAnalyticsService AnalyticsService
 @inject IPdfReportService PdfReportService
 @inject IEmailService EmailService
@@ -35,7 +36,7 @@
                 <input type="date"
                        class="form-input"
                        @bind="_selectedDate"
-                       min="1992-07-02"
+                       min="@MinDateString"
                        max="@MaxDateString"
                        disabled="@IsBusy" />
 
@@ -311,6 +312,7 @@
     private bool IsBusy => _currentStage != OperationStage.None;
     private bool IsReportReadyForSelectedDate => _report is not null && _loadedForDate == _selectedDate;
     private bool CanUseReportActions => !IsBusy && IsReportReadyForSelectedDate;
+    private static string MinDateString => DailyExchangeRatesReport.MinDate.ToString("yyyy-MM-dd");
     private static string MaxDateString => DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
 
     private IEnumerable<CurrencyRateDynamics> FilteredRates
@@ -533,4 +535,4 @@
         < 0 => "rate-down",
         _ => "rate-neutral"
     };
-}
+}

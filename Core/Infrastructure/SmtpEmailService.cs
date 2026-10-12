@@ -1,8 +1,8 @@
 using ErrorOr;
 using System.Net.Sockets;
 using System.Text;
+using Core.Domain.Helpers;
 using Core.Domain.Models;
-using Core.Infrastructure.Helpers;
 using Core.Services;
 using Microsoft.Extensions.Options;
 using MailKit.Net.Smtp;

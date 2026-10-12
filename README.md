@@ -227,14 +227,15 @@ russian-central-bank-exchange-rates/
 │   │   ├── Errors/
 │   │   │   └── CbrErrors.cs                        # internal: каталог транзиентных сетевых ошибок ЦБ РФ (Error.Custom)
 │   │   ├── Helpers/
+│   │   │   ├── FormattingExtensions.cs             # public/internal: методы форматирования доменных моделей
 │   │   │   └── LinqExtensions.cs                   # internal: обобщённый оператор LeftJoin
 │   │   └── Models/
-│   │       ├── Currency.cs                         # public: Value Object валюты (NumCode, CharCode, Name + Usd/Eur)
+│   │       ├── Currency.cs                         # public: Value Object валюты (NumCode, CharCode, Name)
 │   │       ├── CurrencyRate.cs                     # internal: Value Object курса за 1 ед. валюты
 │   │       ├── ExchangeRateReport.cs               # internal: Value Object дневного среза котировок ЦБ РФ
 │   │       ├── CurrencyRateDynamics.cs             # public: Value Object расчёта изменений по валюте
-│   │       ├── CurrencyRatePoint.cs                # public: Value Object точки курса на графике (Date, UnitRate)
-│   │       ├── CurrencyRateTrend.cs                # public: Value Object 7-дневного тренда валюты (Currency, Points)
+│   │       ├── CurrencyRatePoint.cs                # internal: Value Object точки курса на графике (Date, UnitRate)
+│   │       ├── CurrencyRateTrend.cs                # internal: Value Object 7-дневного тренда валюты (Currency, Points)
 │   │       ├── DailyExchangeRatesReport.cs         # public: Агрегат итогового аналитического отчёта
 │   │       └── EmailAddress.cs                     # public: Value Object email-адреса с глубокой валидацией
 │   ├── Services/
@@ -255,8 +256,6 @@ russian-central-bank-exchange-rates/
 │       ├── SmtpOptions.cs                          # internal: настройки подключения к SMTP-серверу
 │       ├── schema.xsd                              # XSD-схема ответа ЦБ РФ
 │       ├── Dto/                                    # internal/EditorBrowsable(Never): XML и JSON Cache DTO
-│       ├── Helpers/
-│       │   └── FormattingExtensions.cs             # public: единые методы форматирования для PDF, Email и UI
 │       └── Mappers/
 │           ├── CbrMapperExtensions.cs              # internal: маппинг XML DTO -> Domain (Tolerant Reader)
 │           └── CacheMapperExtensions.cs            # internal: маппинг Domain <-> JSON Cache DTO
@@ -273,14 +272,14 @@ russian-central-bank-exchange-rates/
 
 ### Инкапсуляция и граница публичного API `Core`
 
-В соответствии с п. 2 и п. 9 ТЗ (*«Чёткое разделение Core/UI, понятный публичный API Core»*), проект `Core` закрывает все детали реализации модификатором `internal`. Снаружи библиотеки доступны **только** следующие типы:
+В соответствии с п. 2 и п. 9 ТЗ (*«Чёткое разделение Core/UI, понятный публичный API Core»*), проект `Core` закрывает все детали реализации модификатором `internal`, а слой `UI` вообще не импортирует пространства имён `Core.Infrastructure.*`. Снаружи библиотеки доступны **только** следующие типы:
 
 | Категория | Публичный API `Core` (`public`) | Скрытая реализация внутри `Core` (`internal`) |
 |---|---|---|
 | **Регистрация в DI** | `DependencyInjection.AddCoreServices(IServiceCollection, IConfiguration)` | Настройка `QuestPDF`, привязка и валидация `CbrClientOptions`, `SmtpOptions`, `CacheOptions`, регистрация `HttpClient`, `XmlSerializer` и цепочки декораторов. |
 | **Сервисные контракты** | `IExchangeRateAnalyticsService`<br>`IPdfReportService`<br>`IEmailService` | `ICbrClient`, `CbrClient`, `CachedCbrClient`, `ExchangeRateAnalyticsService`, `CachedExchangeRateAnalyticsService`, `LastReportFileCache`, `PdfReportService`, `SmtpEmailService`. |
-| **Доменные модели и ошибки** | `DailyExchangeRatesReport`<br>`CurrencyRateDynamics`<br>`CurrencyRateTrend`<br>`CurrencyRatePoint`<br>`Currency`<br>`EmailAddress`<br>*(все с `private` конструкторами — `UI` может только читать свойства отчёта и вызывать `EmailAddress.Create`)* | `CbrErrors` (`TransientNetworkErrorType`, `IsTransientNetworkError`), `ExchangeRateReport`, `CurrencyRate`, а также все фабричные методы `DailyExchangeRatesReport.Create`, `CurrencyRateDynamics.Create`, `CurrencyRateTrend.Create`, `CurrencyRatePoint.Create`, `Currency.Create`, `ValidateRequestedDate`. |
-| **Форматирование и DTO** | `FormattingExtensions` *(единое форматирование курсов, процентов, дат, примечаний к графику `FormatWeeklyChartNote` и имени PDF-файла)* | `CbrMapperExtensions`, `CacheMapperExtensions`, `LinqExtensions`, `LastDailyExchangeRatesReportCacheDto`, `ExchangeRateReportCacheDto`, `CurrencyRateCacheDto`, `LastDailyExchangeRatesReportCacheJsonContext`. |
+| **Доменные модели и ошибки** | `DailyExchangeRatesReport`<br>`CurrencyRateDynamics`<br>`Currency`<br>`EmailAddress`<br>*(все с `private` конструкторами — `UI` может только читать свойства отчёта и вызывать `EmailAddress.Create`)* | `CbrErrors` (`TransientNetworkErrorType`, `IsTransientNetworkError`), `ExchangeRateReport`, `CurrencyRate`, `CurrencyRateTrend`, `CurrencyRatePoint`, а также все фабричные методы `DailyExchangeRatesReport.Create`, `CurrencyRateDynamics.Create`, `CurrencyRateTrend.Create`, `CurrencyRatePoint.Create`, `Currency.Create`, `ValidateRequestedDate`. |
+| **Форматирование и DTO** | `FormattingExtensions` *(в `Core.Domain.Helpers`: публичны только методы, используемые в `UI`, а специфичные методы вёрстки PDF/Email закрыты как `internal`)* | `CbrMapperExtensions`, `CacheMapperExtensions`, `LinqExtensions`, `LastDailyExchangeRatesReportCacheDto`, `ExchangeRateReportCacheDto`, `CurrencyRateCacheDto`, `LastDailyExchangeRatesReportCacheJsonContext`. |
 
 Такой дизайн гарантирует на уровне компилятора C#, что слой `UI` физически не может обойти валидацию, напрямую обратиться к `HttpClient` или `IMemoryCache`, вручную сконструировать фальшивый `DailyExchangeRatesReport` или изменить бизнес-правила расчёта.
 
@@ -357,7 +356,7 @@ russian-central-bank-exchange-rates/
   2. Валюта `EUR` начала котироваться Банком России только с `01.01.1999`. При запросе отчёта за 1992–1998 гг. или за первую неделю января 1999 г. (например, `04.01.1999`, когда окно захватывает конец декабря 1998 г.) кривая `EUR` отсутствует полностью или частично.
 - **Решение:**
   1. Окно графика привязано к запрошенной календарной дате `[RequestedDate - 6 дней .. RequestedDate]` (`WindowStartDate` в `DailyExchangeRatesReport`), а `CurrencyRateTrend.Create` протягивает действующий курс (`Carry-Forward`) вплоть до `RequestedDate`.
-  2. Метод [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Infrastructure/Helpers/FormattingExtensions.cs) анализирует полноту рядов `USD` и `EUR` относительно `ExpectedTrendDaysCount` и `IsHistoryComplete` и автоматически выводит под заголовком графика в PDF точное аналитическое пояснение (например, почему в 1996 г. отображён только `USD`, почему в начале января 1999 г. `EUR` показан за часть дней окна или почему в автономном режиме график построен по неполному числу дней из кэша).
+  2. Метод [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Domain/Helpers/FormattingExtensions.cs) анализирует полноту рядов `USD` и `EUR` относительно `ExpectedTrendDaysCount` и `IsHistoryComplete` и автоматически выводит под заголовком графика в PDF точное аналитическое пояснение (например, почему в 1996 г. отображён только `USD`, почему в начале января 1999 г. `EUR` показан за часть дней окна или почему в автономном режиме график построен по неполному числу дней из кэша).
 
 ---
 
@@ -440,7 +439,7 @@ flowchart TD
 2. **Протяжка курса на нерабочие дни (`Carry-Forward` / `LOCF` в `CurrencyRateTrend.Create`) и умные примечания в PDF:**
    - В финансовой отчётности в выходные и праздничные дни продолжает действовать последний официально установленный курс ЦБ РФ (`r.Date <= date`).
    - Метод [`CurrencyRateTrend.Create`](./Core/Domain/Models/CurrencyRateTrend.cs) строит непрерывный календарный ряд `CurrencyRatePoint` от `startDate` (`WindowStartDate`) до `endDate` (`RequestedDate`). Если соседние календарные дни попадают на один и тот же нерабочий срез (`ReferenceEquals(effectiveReport, lastEffectiveReport)`), повторный поиск валюты по списку `Rates` не выполняется.
-   - Если для архивной даты (например, в 1992–1998 гг. до введения евро) валюта `EUR` отсутствует в выгрузке ЦБ РФ (`ErrorType.NotFound`) или котировалась только часть недели (начало января 1999 г.), либо отчёт собран в офлайне из неполного кэша (`!IsHistoryComplete`), `DailyExchangeRatesReport` строит график по доступным точкам, а [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Infrastructure/Helpers/FormattingExtensions.cs) выводит под заголовком графика в PDF курсивное пояснение.
+   - Если для архивной даты (например, в 1992–1998 гг. до введения евро) валюта `EUR` отсутствует в выгрузке ЦБ РФ (`ErrorType.NotFound`) или котировалась только часть недели (начало января 1999 г.), либо отчёт собран в офлайне из неполного кэша (`!IsHistoryComplete`), `DailyExchangeRatesReport` строит график по доступным точкам, а [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Domain/Helpers/FormattingExtensions.cs) выводит под заголовком графика в PDF курсивное пояснение.
 3. **Векторная отрисовка SVG в PDF (`ScottPlot` + `QuestPDF`):**
    - В [`PdfReportService.ComposeWeeklyTrendsChart`](./Core/Infrastructure/PdfReportService.cs) библиотека **`ScottPlot`** формирует чистый векторный SVG (`plot.GetSvgXml`), который встраивается в документ `QuestPDF` через `row.RelativeItem().Svg(svgXml)`. Благодаря векторному формату линии тренда, маркеры и подписи значений курса сохраняют идеальную чёткость при любом масштабировании и печати.
 

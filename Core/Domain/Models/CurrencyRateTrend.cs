@@ -2,7 +2,7 @@ using ErrorOr;
 
 namespace Core.Domain.Models;
 
-public sealed record CurrencyRateTrend
+internal sealed record CurrencyRateTrend
 {
     public Currency Currency { get; }
     public IReadOnlyList<CurrencyRatePoint> Points { get; }

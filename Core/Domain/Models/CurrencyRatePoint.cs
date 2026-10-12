@@ -2,7 +2,7 @@ using ErrorOr;
 
 namespace Core.Domain.Models;
 
-public sealed record CurrencyRatePoint
+internal sealed record CurrencyRatePoint
 {
     public DateOnly Date { get; }
     public decimal UnitRate { get; }

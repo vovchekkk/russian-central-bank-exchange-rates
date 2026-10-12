@@ -1,7 +1,7 @@
 using System.Globalization;
 using Core.Domain.Models;
 
-namespace Core.Infrastructure.Helpers;
+namespace Core.Domain.Helpers;
 
 public static class FormattingExtensions
 {
@@ -15,14 +15,13 @@ public static class FormattingExtensions
     public static string FormatPdfFileName(this DailyExchangeRatesReport report)
         => $"cbr-rates-{report.RequestedDate:yyyy-MM-dd}.pdf";
 
-    public static string FormatAveragePercentChange(this DailyExchangeRatesReport report)
+    internal static string FormatAveragePercentChange(this DailyExchangeRatesReport report)
         => $"Среднее изменение по всем валютам: {report.AveragePercentChange.FormatSigned("%", "Н/Д")}";
 
-    public static string FormatSummaryLine(this CurrencyRateDynamics item)
-        =>
-            $"• {item.Currency.CharCode} ({item.Currency.Name}): {item.PercentChange.FormatSigned("%")} ({item.AbsoluteChange.FormatSigned(" руб.")})";
+    internal static string FormatSummaryLine(this CurrencyRateDynamics item)
+        => $"• {item.Currency.CharCode} ({item.Currency.Name}): {item.PercentChange.FormatSigned("%")} ({item.AbsoluteChange.FormatSigned(" руб.")})";
 
-    public static string FormatWeeklyChartTitle(this DailyExchangeRatesReport report)
+    internal static string FormatWeeklyChartTitle(this DailyExchangeRatesReport report)
     {
         var currencies = report.WeeklyTrends.Count > 0
             ? report.WeeklyTrends.Select(t => t.Currency.CharCode)
@@ -87,7 +86,7 @@ public static class FormattingExtensions
             : null;
     }
 
-    public static string FormatChartLegend(this Currency currency)
+    internal static string FormatChartLegend(this Currency currency)
         => $"{currency.CharCode} ({currency.Name})";
 
     public static string FormatSigned(this decimal value, string suffix = "")
@@ -102,7 +101,7 @@ public static class FormattingExtensions
     public static string FormatRate(this decimal value, string suffix = "")
         => $"{value.ToString("N4", RuCulture)}{suffix}";
 
-    public static string FormatShortRate(this decimal value, string suffix = "")
+    internal static string FormatShortRate(this decimal value, string suffix = "")
         => $"{value.ToString("N2", RuCulture)}{suffix}";
 
     public static string FormatRate(this decimal? value, string suffix = "", string nullPlaceholder = "-")
