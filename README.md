@@ -369,18 +369,18 @@ russian-central-bank-exchange-rates/
 ```mermaid
 flowchart TD
     Req["Запрос GetDailyAnalyticsAsync(date)"] --> Validate["Валидация даты (02.07.1992 .. Сегодня)"]
-    Validate -->|Ошибка| ErrVal["Возврат Error.Validation"]
-    Validate -->|ОК| L1{"Есть в L1 (IMemoryCache)?"}
-    L1 -->|Hit| SyncL2["SaveIfChangedAsync в L2 (last-report.json)"] --> RetL1["Возврат отчёта из L1"]
-    L1 -->|Miss| LoadL2["Чтение L2 (last-report.json) + Прогрев L1 всех интервалов HistoricalReports"]
+    Validate -->|"Ошибка"| ErrVal["Возврат Error.Validation"]
+    Validate -->|"ОК"| L1{"Есть в L1 (IMemoryCache)?"}
+    L1 -->|"Hit"| SyncL2["SaveIfChangedAsync в L2 (last-report.json)"] --> RetL1["Возврат отчёта из L1"]
+    L1 -->|"Miss"| LoadL2["Чтение L2 (last-report.json) + Прогрев L1 всех интервалов HistoricalReports"]
     LoadL2 --> CheckL2{"L2.RequestedDate == date?"}
-    CheckL2 -->|Да| SetL1["Запись в L1"] --> RetL2["Возврат отчёта из L2 (без сети)"]
-    CheckL2 -->|Нет| Net["Запрос через ExchangeRateAnalyticsService -> CachedCbrClient -> CbrClient"]
-    Net -->|Успех (IsHistoryComplete == true)| SaveAll["Запись в L1 + Атомарная запись в L2 (.tmp -> Move)"] --> RetFresh["Возврат полного отчёта"]
-    Net -->|Успех (частичный офлайн-график, IsHistoryComplete == false)| RetPartial["Возврат отчёта без перезаписи L1/L2"]
-    Net -->|Ошибка| CheckErr{"Есть L2 И ошибка IsTransientNetworkError()?"}
-    CheckErr -->|Да| RetFailSafe["LogWarning + Возврат последнего отчёта из L2 (Fail-Safe)"]
-    CheckErr -->|Нет| RetErr["Возврат реальной ошибки ErrorOr на UI"]
+    CheckL2 -->|"Да"| SetL1["Запись в L1"] --> RetL2["Возврат отчёта из L2 (без сети)"]
+    CheckL2 -->|"Нет"| Net["Запрос через ExchangeRateAnalyticsService -> CachedCbrClient -> CbrClient"]
+    Net -->|"Успех (IsHistoryComplete == true)"| SaveAll["Запись в L1 + Атомарная запись в L2 (.tmp -> Move)"] --> RetFresh["Возврат полного отчёта"]
+    Net -->|"Успех (частичный офлайн-график, IsHistoryComplete == false)"| RetPartial["Возврат отчёта без перезаписи L1/L2"]
+    Net -->|"Ошибка"| CheckErr{"Есть L2 И ошибка IsTransientNetworkError()?"}
+    CheckErr -->|"Да"| RetFailSafe["LogWarning + Возврат последнего отчёта из L2 (Fail-Safe)"]
+    CheckErr -->|"Нет"| RetErr["Возврат реальной ошибки ErrorOr на UI"]
 ```
 
 #### Два сценария офлайн-работы (отображение на UI + генерация PDF):
