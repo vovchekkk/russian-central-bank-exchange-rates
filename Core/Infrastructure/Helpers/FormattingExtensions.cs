@@ -55,11 +55,21 @@ public static class FormattingExtensions
             notes.Add($"котировки {string.Join(", ", missingCurrencies)} за выбранный период отсутствуют в базе ЦБ РФ");
         }
 
-        var totalDays = report.WeeklyTrends
+        var dates = report.WeeklyTrends
             .SelectMany(t => t.Points)
             .Select(p => p.Date)
             .Distinct()
-            .Count();
+            .OrderBy(d => d)
+            .ToList();
+
+        var totalDays = dates.Count;
+        var expectedDays = report.ExpectedTrendDaysCount;
+
+        if (totalDays > 0 && totalDays < expectedDays)
+        {
+            notes.Add(
+                $"график построен по доступным в кэше данным за {totalDays} из {expectedDays} дн. (с {dates[0]:dd.MM.yyyy} по {dates[^1]:dd.MM.yyyy})");
+        }
 
         foreach (var trend in report.WeeklyTrends)
         {

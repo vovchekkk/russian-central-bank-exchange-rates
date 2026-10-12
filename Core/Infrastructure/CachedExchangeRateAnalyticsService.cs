@@ -113,8 +113,12 @@ internal sealed class CachedExchangeRateAnalyticsService(
             return result.Errors;
 
         var freshReport = result.Value;
-        memoryCache.Set(GetCacheKey(date), freshReport, entryOptions);
-        await fileCache.SaveIfChangedAsync(freshReport, cancellationToken);
+        if (freshReport.IsHistoryComplete)
+        {
+            memoryCache.Set(GetCacheKey(date), freshReport, entryOptions);
+            await fileCache.SaveIfChangedAsync(freshReport, cancellationToken);
+        }
+
         return freshReport;
     }
 

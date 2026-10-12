@@ -65,7 +65,21 @@ internal sealed class ExchangeRateAnalyticsService(
 
             var nextReportResult = await cbrClient.GetExchangeRateReportAsync(nextTargetDate, cancellationToken);
             if (nextReportResult.IsError)
+            {
+                if (reports.Count >= 2)
+                {
+                    logger.LogWarning(
+                        "Не удалось докачать архивный срез на {TargetDate:dd.MM.yyyy} для полного 7-дневного графика ({Error}). Отчёт на {RequestedDate:dd.MM.yyyy} будет сформирован по доступным в кэше срезам ({Count} шт.)",
+                        nextTargetDate,
+                        nextReportResult.FirstError.Description,
+                        date,
+                        reports.Count
+                    );
+                    break;
+                }
+
                 return nextReportResult.Errors;
+            }
 
             var nextReport = nextReportResult.Value;
             if (nextReport.Date >= reports[^1].Date)

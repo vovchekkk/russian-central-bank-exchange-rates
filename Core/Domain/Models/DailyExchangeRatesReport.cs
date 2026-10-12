@@ -17,6 +17,16 @@ public sealed record DailyExchangeRatesReport
     public DateOnly RequestedDate { get; }
     public DateOnly CurrentDate => CurrentReport.Date;
     public DateOnly PreviousDate => PreviousReport.Date;
+    public DateOnly WindowStartDate
+    {
+        get
+        {
+            var start = RequestedDate.AddDays(-(DefaultTrendDaysCount - 1));
+            return start < ExchangeRateReport.MinCbrDate ? ExchangeRateReport.MinCbrDate : start;
+        }
+    }
+    public int ExpectedTrendDaysCount => RequestedDate.DayNumber - WindowStartDate.DayNumber + 1;
+    public bool IsHistoryComplete => HistoricalReports[^1].Date <= WindowStartDate;
     public IReadOnlyList<CurrencyRateDynamics> AllRates { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopGrown { get; }
     public IReadOnlyList<CurrencyRateDynamics> TopFallen { get; }
