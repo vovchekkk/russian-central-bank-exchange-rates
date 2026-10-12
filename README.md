@@ -30,6 +30,7 @@
 | **5. Конфигурация** | Параметры в `config.json` (вне Git), наличие шаблона `config.example.json` в репозитории | Выполнено (`UI/config.example.json` в репозитории, `config.json` в `.gitignore`). Добавлена декларативная валидация `DataAnnotations` + Source Generator. |
 | **7.1. Доп. задание №1** | Кэширование последних загруженных данных с возможностью сформировать отчёт без подключения к сети | **Выполнено.** Двухуровневый кэш (**L1 `IMemoryCache`** + **L2 `cache/last-report.json`**) с атомарной записью, прогревом памяти, режимом **Fail-Safe** и офлайн-сохранением PDF. |
 | **7.2. Доп. задание №2** | Логирование операций в файл | **Выполнено.** Структурированное логирование через **`Serilog`** (`logs/app-YYYYMMDD.log`) с ежедневной ротацией и фильтрацией системного шума. |
+| **7.3. Доп. задание №3** | График динамики курса (USD/EUR) за последние 7 дней в PDF | **Выполнено.** Пошаговая докачка исторических срезов ЦБ РФ за 7-дневное окно, протяжка курсов через выходные (`Carry-Forward`) в `CurrencyRateTrend` и векторная отрисовка SVG-графика через **`ScottPlot`** внутри **`QuestPDF`**. |
 
 ---
 
@@ -126,7 +127,7 @@ sequenceDiagram
     participant CbrCache as CachedCbrClient (L1 Memory)
     participant CbrHttp as CbrClient (HTTP XML_daily.asp)
     participant Domain as DailyExchangeRatesReport (Domain)
-    participant Pdf as PdfReportService (QuestPDF)
+    participant Pdf as PdfReportService (QuestPDF + ScottPlot)
     participant Smtp as SmtpEmailService (MailKit)
 
     User->>UI: 1. Выбирает дату и нажимает «Загрузить данные»
@@ -139,11 +140,13 @@ sequenceDiagram
         CbrCache->>CbrHttp: GET /scripts/XML_daily.asp?date_req=dd/MM/yyyy
         CbrHttp-->>CbrCache: ValCurs (windows-1251) -> ExchangeRateReport (currentReport)
         Note over CbrCache: Кэширует весь интервал [currentReport.Date .. selectedDate]
-        Analytics->>CbrCache: GetExchangeRateReportAsync(currentReport.Date.AddDays(-1))
-        CbrCache->>CbrHttp: GET /scripts/XML_daily.asp?date_req=prevDate
-        CbrHttp-->>CbrCache: ValCurs -> ExchangeRateReport (previousReport)
-        Analytics->>Domain: DailyExchangeRatesReport.Create(selectedDate, currentReport, previousReport)
-        Domain-->>Analytics: Расчёт UnitRate, LeftJoin динамики, Топ-3 роста/падения, среднего %
+        loop Шаг назад по report.Date.AddDays(-1) до покрытия 7 дней (минимум 2 среза)
+            Analytics->>CbrCache: GetExchangeRateReportAsync(nextTargetDate)
+            CbrCache->>CbrHttp: GET /scripts/XML_daily.asp?date_req=dd/MM/yyyy (если нет в L1)
+            CbrHttp-->>CbrCache: ValCurs -> ExchangeRateReport
+        end
+        Analytics->>Domain: DailyExchangeRatesReport.Create(selectedDate, historicalReports)
+        Domain-->>Analytics: Расчёт UnitRate, LeftJoin динамики, Топ-3, среднего % и 7-дневных трендов USD/EUR
         Analytics-->>CacheSvc: DailyExchangeRatesReport
         CacheSvc->>FileCache: SaveIfChangedAsync (атомарная запись в last-report.json)
         CacheSvc-->>UI: ErrorOr<DailyExchangeRatesReport>
@@ -153,7 +156,7 @@ sequenceDiagram
     User->>UI: 2. Вводит Email и нажимает «Отправить отчёт»
     UI->>Domain: EmailAddress.Create(recipientEmail)
     UI->>Pdf: GenerateDailyReportAsync(report)
-    Pdf-->>UI: ErrorOr<byte[]> (PDF-документ A4)
+    Pdf-->>UI: ErrorOr<byte[]> (PDF-документ A4 с SVG-графиком за 7 дней)
     UI->>Smtp: SendDailyReportAsync(report, emailAddress, pdfBytes)
     Smtp-->>UI: Доставка письма с темой, сводкой Топ-3 и вложением cbr-rates-yyyy-MM-dd.pdf
     UI-->>User: Уведомление об успешной отправке
@@ -166,18 +169,18 @@ sequenceDiagram
    - Поле выбора даты ограничено диапазоном от `02.07.1992` (первая историческая котировка в базе ЦБ РФ) до текущей даты (нельзя выбрать дату в будущем).
    - Кнопки **«Сохранить PDF»** и **«Отправить отчёт»** блокируются при смене даты в календаре до тех пор, пока пользователь не нажмёт **«Загрузить данные»**, что исключает отправку старого отчёта при изменённом поле даты.
 
-2. **Загрузка котировок и определение предыдущего торгового дня:**
-   - `CbrClient` запрашивает `https://www.cbr.ru/scripts/XML_daily.asp?date_req=dd/MM/yyyy`, декодирует поток из `windows-1251`, десериализует XML в `ValCurs` и преобразует в доменный срез `ExchangeRateReport`.
-   - `ExchangeRateAnalyticsService` считывает фактическую дату котировки из `currentReport.Date` (атрибут `Date` корневого элемента `<ValCurs>`) и запрашивает предыдущий доступный срез на дату `currentReport.Date.AddDays(-1)`.
+2. **Загрузка котировок, определение предыдущего торгового дня и 7-дневного окна:**
+   - `CbrClient` запрашивает `https://www.cbr.ru/scripts/XML_daily.asp?date_req=dd/MM/yyyy`, декодирует поток из `windows-1251`, десериализует XML в `ValCurs` и преобразует в доменный срез `ExchangeRateReport` через антикоррупционный маппер `CbrMapperExtensions.ToDomain` (с применением паттерна **Tolerant Reader** для изоляции повреждённых архивных записей).
+   - `ExchangeRateAnalyticsService` считывает фактическую дату котировки из `currentReport.Date` (атрибут `Date` корневого элемента `<ValCurs>`) и в едином цикле `FetchHistoricalReportsAsync` шагает назад по `reports[^1].Date.AddDays(-1)`, пока не соберёт минимум 2 торговых среза (для расчёта дневной динамики) и не покроет 7-дневное календарное окно `[RequestedDate - 6 дней .. RequestedDate]` (`WindowStartDate`) для графика `USD`/`EUR`.
 
 3. **Доменный расчёт аналитики (`DailyExchangeRatesReport.Create`):**
    - Для каждой валюты курс приводится к **1 единице валюты** (`UnitRate`): используется высокоточное поле `<VunitRate>` из XML ЦБ РФ, а при его отсутствии в архивных выгрузках выполняется фолбэк `Value / Nominal`.
-   - Текущий и предыдущий срезы сопоставляются через кастомный `LeftJoin` по сущности `Currency`.
+   - Текущий (`HistoricalReports[0]`) и предыдущий (`HistoricalReports[1]`) срезы сопоставляются через кастомный `LeftJoin` по сущности `Currency`.
    - В `CurrencyRateDynamics.Create` вычисляются абсолютное изменение (`CurrentUnitRate - PreviousUnitRate`) и процентное изменение с округлением до 4 знаков после запятой:
 
      $$\text{PercentChange} = \text{round}\left(\frac{\text{CurrentUnitRate} - \text{PreviousUnitRate}}{\text{PreviousUnitRate}} \times 100, 4\right)$$
 
-   - Формируются списки **Топ-3 выросших валют** (`PercentChange > 0`, по убыванию), **Топ-3 упавших валют** (`PercentChange < 0`, по возрастанию) и **среднее изменение по всем валютам** (`AveragePercentChange`).
+   - Формируются списки **Топ-3 выросших валют** (`PercentChange > 0`, по убыванию), **Топ-3 упавших валют** (`PercentChange < 0`, по возрастанию), **среднее изменение по всем валютам** (`AveragePercentChange`) и **7-дневные тренды `WeeklyTrends`** (`CurrencyRateTrend`) для `Currency.Usd` и `Currency.Eur`.
 
 4. **Отображение в UI и интерактивная работа с таблицей:**
    - Во время выполнения любой операции отображается панель прогресса со спиннером и активным шагом (`1. Загрузка` → `2. Формирование PDF` → `3. Отправка`).
@@ -188,17 +191,20 @@ sequenceDiagram
    - Генерируется документ формата A4 (шрифт `Arial`, отступы `1.5 см`) со следующей структурой:
      - **Шапка:** заголовок «Отчёт по курсам валют ЦБ РФ» и строка дат (с явным указанием запрошенной даты, даты действующего курса ЦБ РФ и даты предыдущего среза для сравнения).
      - **Блок «Итоги дня»:** среднее изменение по всем валютам и две колонки с Топ-3 роста (зелёный акцент) и Топ-3 падения (красный акцент) с указанием изменения в `%` и в рублях.
+     - **Векторный график динамики за 7 дней:** блок «Динамика курса за последние 7 дней (руб. за 1 ед.)», построенный с помощью **`ScottPlot`** в векторном формате SVG и встроенный через `QuestPDF` (`row.RelativeItem().Svg(...)`), с линиями трендов `USD` и `EUR`, маркерами точек, подписями значений курса и автоматическими аналитическими примечаниями (`FormattingExtensions.FormatWeeklyChartNote`) при неполном покрытии архивного или офлайн-окна.
      - **Таблица всех валют:** 6 колонок (`Код`, `Валюта`, `Курс (руб.)`, `Пред. (руб.)`, `Изм. (руб.)`, `Изм. (%)`) с цветовой индикацией знака и сквозной нумерацией страниц в колонтитуле (`Страница X из Y`).
    - Отчёт можно как сразу сохранить локально кнопкой **«Сохранить PDF»**, так и отправить по почте.
 
 6. **Отправка письма по SMTP (`SmtpEmailService`):**
-   - Адрес получателя валидируется через доменный Value Object `EmailAddress.Create`.
+   - Адрес получателя и отправителя валидируются через доменный Value Object `EmailAddress.Create`.
    - Собирается `MimeMessage` с темой `Курсы валют ЦБ РФ на {CurrentDate:dd.MM.yyyy}`, текстовым телом со сводкой Топ-3 роста и Топ-3 падения и прикреплённым PDF-файлом `cbr-rates-{CurrentDate:yyyy-MM-dd}.pdf`.
 
 ### Рекомендуемые даты для быстрой проверки особых случаев
-- **Любое воскресенье или праздничный день (например, `05.01.2025`):** демонстрация корректного определения действующего курса ЦБ РФ (от `29.12.2024`) и предыдущего торгового дня (от `28.12.2024`) с выводом информационного баннера о нерабочем дне.
+- **Любое воскресенье или праздничный день (например, `05.01.2025`):** демонстрация корректного определения действующего курса ЦБ РФ (от `29.12.2024`), предыдущего торгового дня (от `28.12.2024`) и протяжки 7-дневного графика вплоть до запрошенной даты `05.01.2025` с выводом информационного баннера о нерабочем дне.
+- **`06.06.1996` (реальная историческая аномалия в XML ЦБ РФ):** в официальной базе ЦБ РФ за эту дату запись `<Valute ID="R01720A">` («Украинских карбованцев») не содержит тегов `<NumCode>` и `<CharCode>`. Демонстрирует работу паттерна **Tolerant Reader**: битая запись изолированно пропускается с записью `WRN` в лог-файл, а отчёт успешно формируется по остальным 23 валидным валютам.
+- **`04.01.1999` или даты до `01.01.1999`:** демонстрация построения 7-дневного графика на границе введения единой европейской валюты `EUR` (котируется Банком России с `01.01.1999`) с автоматическим пояснением в PDF-отчёте.
 - **`19.01.2023`:** день, когда ЦБ РФ добавил в перечень сразу 9 новых валют (`AED`, `THB`, `VND`, `RSD`, `NZD`, `EGP`, `IDR`, `QAR`, `GEL`). Для новых валют в колонках предыдущего курса и изменения корректно отображается прочерк `-` без сбоев в расчёте Топ-3.
-- **Отключение интернета после загрузки:** демонстрация работы **Fail-Safe** режима и сохранения PDF-отчёта полностью офлайн.
+- **Отключение интернета после загрузки:** демонстрация работы селективного **Fail-Safe** режима, сборки отчёта с частичным 7-дневным графиком по доступным в кэше срезам и сохранения PDF-отчёта полностью офлайн.
 
 ---
 
@@ -218,13 +224,17 @@ russian-central-bank-exchange-rates/
 │   ├── Core.csproj
 │   ├── DependencyInjection.cs                      # Единственная точка входа для регистрации сервисов (AddCoreServices)
 │   ├── Domain/
+│   │   ├── Errors/
+│   │   │   └── CbrErrors.cs                        # internal: каталог транзиентных сетевых ошибок ЦБ РФ (Error.Custom)
 │   │   ├── Helpers/
 │   │   │   └── LinqExtensions.cs                   # internal: обобщённый оператор LeftJoin
 │   │   └── Models/
-│   │       ├── Currency.cs                         # public: Value Object валюты (NumCode, CharCode, Name)
+│   │       ├── Currency.cs                         # public: Value Object валюты (NumCode, CharCode, Name + Usd/Eur)
 │   │       ├── CurrencyRate.cs                     # internal: Value Object курса за 1 ед. валюты
 │   │       ├── ExchangeRateReport.cs               # internal: Value Object дневного среза котировок ЦБ РФ
 │   │       ├── CurrencyRateDynamics.cs             # public: Value Object расчёта изменений по валюте
+│   │       ├── CurrencyRatePoint.cs                # public: Value Object точки курса на графике (Date, UnitRate)
+│   │       ├── CurrencyRateTrend.cs                # public: Value Object 7-дневного тренда валюты (Currency, Points)
 │   │       ├── DailyExchangeRatesReport.cs         # public: Агрегат итогового аналитического отчёта
 │   │       └── EmailAddress.cs                     # public: Value Object email-адреса с глубокой валидацией
 │   ├── Services/
@@ -238,7 +248,7 @@ russian-central-bank-exchange-rates/
 │       ├── CachedCbrClient.cs                      # internal: L1-декоратор кэширования срезов ЦБ РФ
 │       ├── CachedExchangeRateAnalyticsService.cs   # internal: L1/L2-декоратор кэширования отчётов + Fail-Safe
 │       ├── LastReportFileCache.cs                  # internal: потокобезопасное хранилище last-report.json
-│       ├── PdfReportService.cs                     # internal: вёрстка PDF-отчёта на QuestPDF
+│       ├── PdfReportService.cs                     # internal: вёрстка PDF-отчёта (QuestPDF + ScottPlot SVG)
 │       ├── SmtpEmailService.cs                     # internal: отправка письма с PDF через MailKit
 │       ├── CbrClientOptions.cs                     # internal: настройки HTTP-клиента ЦБ РФ
 │       ├── CacheOptions.cs                         # internal: настройки времени жизни и пути кэша
@@ -248,7 +258,7 @@ russian-central-bank-exchange-rates/
 │       ├── Helpers/
 │       │   └── FormattingExtensions.cs             # public: единые методы форматирования для PDF, Email и UI
 │       └── Mappers/
-│           ├── CbrMapperExtensions.cs              # internal: маппинг XML DTO -> Domain
+│           ├── CbrMapperExtensions.cs              # internal: маппинг XML DTO -> Domain (Tolerant Reader)
 │           └── CacheMapperExtensions.cs            # internal: маппинг Domain <-> JSON Cache DTO
 └── UI/                                             # Десктопное приложение Photino.Blazor
     ├── UI.csproj
@@ -269,8 +279,8 @@ russian-central-bank-exchange-rates/
 |---|---|---|
 | **Регистрация в DI** | `DependencyInjection.AddCoreServices(IServiceCollection, IConfiguration)` | Настройка `QuestPDF`, привязка и валидация `CbrClientOptions`, `SmtpOptions`, `CacheOptions`, регистрация `HttpClient`, `XmlSerializer` и цепочки декораторов. |
 | **Сервисные контракты** | `IExchangeRateAnalyticsService`<br>`IPdfReportService`<br>`IEmailService` | `ICbrClient`, `CbrClient`, `CachedCbrClient`, `ExchangeRateAnalyticsService`, `CachedExchangeRateAnalyticsService`, `LastReportFileCache`, `PdfReportService`, `SmtpEmailService`. |
-| **Доменные модели** | `DailyExchangeRatesReport`<br>`CurrencyRateDynamics`<br>`Currency`<br>`EmailAddress`<br>*(все с `private` конструкторами — `UI` может только читать свойства отчёта и вызывать `EmailAddress.Create`)* | `ExchangeRateReport`, `CurrencyRate`, а также все фабричные методы `DailyExchangeRatesReport.Create`, `CurrencyRateDynamics.Create`, `Currency.Create`, `ValidateRequestedDate`. |
-| **Форматирование и DTO** | `FormattingExtensions` *(единое форматирование курсов, процентов, дат и имени PDF-файла)* | `CbrMapperExtensions`, `CacheMapperExtensions`, `LinqExtensions`, `LastDailyExchangeRatesReportCacheDto`, `ExchangeRateReportCacheDto`, `CurrencyRateCacheDto`, `LastDailyExchangeRatesReportCacheJsonContext`. |
+| **Доменные модели и ошибки** | `DailyExchangeRatesReport`<br>`CurrencyRateDynamics`<br>`CurrencyRateTrend`<br>`CurrencyRatePoint`<br>`Currency`<br>`EmailAddress`<br>*(все с `private` конструкторами — `UI` может только читать свойства отчёта и вызывать `EmailAddress.Create`)* | `CbrErrors` (`TransientNetworkErrorType`, `IsTransientNetworkError`), `ExchangeRateReport`, `CurrencyRate`, а также все фабричные методы `DailyExchangeRatesReport.Create`, `CurrencyRateDynamics.Create`, `CurrencyRateTrend.Create`, `CurrencyRatePoint.Create`, `Currency.Create`, `ValidateRequestedDate`. |
+| **Форматирование и DTO** | `FormattingExtensions` *(единое форматирование курсов, процентов, дат, примечаний к графику `FormatWeeklyChartNote` и имени PDF-файла)* | `CbrMapperExtensions`, `CacheMapperExtensions`, `LinqExtensions`, `LastDailyExchangeRatesReportCacheDto`, `ExchangeRateReportCacheDto`, `CurrencyRateCacheDto`, `LastDailyExchangeRatesReportCacheJsonContext`. |
 
 Такой дизайн гарантирует на уровне компилятора C#, что слой `UI` физически не может обойти валидацию, напрямую обратиться к `HttpClient` или `IMemoryCache`, вручную сконструировать фальшивый `DailyExchangeRatesReport` или изменить бизнес-правила расчёта.
 
@@ -282,12 +292,12 @@ russian-central-bank-exchange-rates/
 
 В проекте комбинируются два подхода:
 1. **Внутри бизнес-логики и доменной модели** исключения не используются для управления потоком выполнения — все фабрики и сервисные методы возвращают дискриминированное объединение **`ErrorOr<T>`**.
-2. **На границах инфраструктуры** (`HttpClient`, `XmlSerializer`, `MailKit`, `QuestPDF`, `File IO`, `IOptions`) все специфичные исключения перехватываются, логируются через `ILogger<T>` с полным контекстом и преобразуются в типизированный `Error.Failure` / `Error.Validation` / `Error.NotFound` с понятным сообщением для пользователя:
+2. **На границах инфраструктуры** (`HttpClient`, `XmlSerializer`, `MailKit`, `QuestPDF`, `File IO`, `IOptions`) все специфичные исключения перехватываются, логируются через `ILogger<T>` с полным контекстом и преобразуются в типизированный `Error.Failure` / `Error.Validation` / `Error.NotFound` или выделенный тип транзиентных сетевых сбоев `CbrErrors` (`Error.Custom`) с понятным сообщением для пользователя:
 
 | Ситуация из п. 4 ТЗ | Где перехватывается | Какие ошибки и исключения обрабатываются | Поведение приложения |
 |---|---|---|---|
-| **Отсутствие сети или недоступность сайта ЦБ РФ** | `CbrClient`<br>`CachedExchangeRateAnalyticsService` | `HttpRequestException`, `TaskCanceledException` (таймаут `CbrClientOptions.Timeout` vs отмена пользователем), не-2xx HTTP-статусы | При наличии кэша на диске автоматически включается **Fail-Safe** режим (возвращается последний сохранённый отчёт с предупреждающим баннером). Если кэша ещё нет — выводится понятное сообщение о недоступности сайта ЦБ РФ. |
-| **Некорректный или пустой ответ сервиса ЦБ РФ** | `CbrClient`<br>`CbrMapperExtensions`<br>`ExchangeRateReport.Create` | Пустой поток, `InvalidOperationException` внутри `XmlSerializer`, некорректный формат даты, пустой список `<Valute>`, нулевой номинал, непарсящийся курс, дубликаты валют | Ошибка логируется в файл, пользователю выводится точное описание проблемы без падения приложения. |
+| **Отсутствие сети или недоступность сайта ЦБ РФ** | `CbrClient`<br>`CbrErrors`<br>`ExchangeRateAnalyticsService`<br>`CachedExchangeRateAnalyticsService` | `HttpRequestException`, `IOException`, `TaskCanceledException` (таймаут `CbrClientOptions.Timeout` vs отмена пользователем), не-2xx HTTP-статусы → маркируются кастомным типом `CbrErrors` (`IsTransientNetworkError()`) | Если в кэше уже есть текущий и предыдущий срезы (`reports.Count >= 2`), отчёт на выбранную дату собирается с частичным 7-дневным графиком. Иначе при наличии кэша на диске включается **Fail-Safe** режим (возвращается последний сохранённый отчёт с предупреждающим баннером). |
+| **Некорректный или пустой ответ сервиса ЦБ РФ** | `CbrClient`<br>`CbrMapperExtensions`<br>`ExchangeRateReport.Create` | Пустой поток, `InvalidOperationException` внутри `XmlSerializer`, некорректный формат даты, пустой список `<Valute>`, повреждённые отдельные записи `<Valute>` (без `<NumCode>`/`<CharCode>`), нулевой номинал, непарсящийся курс | Отдельные битые записи `<Valute>` изолированно пропускаются с записью `LogWarning` (**Tolerant Reader**). Если же нарушена целостность всего документа или в срезе нет ни одной валидной валюты — ошибка не маскируется офлайн-кэшем, а честно выводится пользователю. |
 | **Некорректный адрес получателя** | `EmailAddress.Create` | Пустая строка (`"Не указан email-адрес получателя."`), несоответствие `EmailAddressAttribute`, ошибка `MailboxAddress.TryParse`, попытка подстановки отображаемого имени (`Display Name Injection`) | Валидация полностью делегирована в `Core` (`EmailAddress.Create`): при пустом или некорректном адресе в `SendReportAsync` мгновенно возвращается `Error.Validation` и выводится сообщение об ошибке **до** запуска генерации PDF и обращения к SMTP. |
 | **Ошибка отправки по SMTP** | `SmtpEmailService` | `AuthenticationException`, `SaslException` (неверный логин/пароль приложения), `SslHandshakeException` (ошибка TLS), `SmtpCommandException` (отказ сервера принять адрес), `TimeoutException`, `SocketException`, `SmtpProtocolException` | Для каждого типа сбоя возвращается адресное сообщение (например, рекомендация проверить пароль приложения при ошибке авторизации или порт при ошибке TLS). |
 | **Отсутствующий или некорректный `config.json`** | `UI/Program.cs`<br>`CbrClient`<br>`SmtpEmailService`<br>`CachedExchangeRateAnalyticsService` | `FileNotFoundException`, `InvalidDataException`, `FormatException` при старте; `OptionsValidationException` при обращении к `options.Value` | Приложение **не падает при запуске** даже при удалённом или синтаксически битом `config.json`: создаётся `StartupConfigState`, показывается системное диалоговое окно и баннер с подсказкой скопировать `config.example.json`. |
@@ -296,11 +306,11 @@ russian-central-bank-exchange-rates/
 
 #### 1. Поиск предыдущего дня по `ValCurs.Date`, а не по календарю
 - **Проблема:** ЦБ РФ не публикует котировки по выходным и официальным праздникам. Если в воскресенье (`11.10.2026`) запросить курс, ЦБ РФ вернёт срез со штампом субботы `<ValCurs Date="10.10.2026">`. Если искать предыдущий день по календарю (`requestedDate.AddDays(-1)` = `10.10.2026`), то и за текущий, и за предыдущий день вернётся один и тот же субботний срез, а динамика по всем валютам станет `0,0000%` (или сработает ошибка валидации дат). Аналогично в новогодние праздники (`01.01`–`08.01`) курс не меняется целую неделю.
-- **Решение:** В [`ExchangeRateAnalyticsService.cs`](./Core/Services/ExchangeRateAnalyticsService.cs) целевая дата предыдущего среза всегда отсчитывается от **фактической даты котировки**, полученной из атрибута `Date` корневого элемента `<ValCurs>`:
+- **Решение:** В [`ExchangeRateAnalyticsService.cs`](./Core/Services/ExchangeRateAnalyticsService.cs) целевая дата каждого предшествующего среза всегда отсчитывается от **фактической даты котировки**, полученной из атрибута `Date` корневого элемента `<ValCurs>`:
   ```csharp
-  var prevTargetDate = currentReport.Date.AddDays(-1);
+  var nextTargetDate = reports[^1].Date.AddDays(-1);
   ```
-  Это гарантирует нахождение реального предшествующего торгового дня при любой длительности выходных или праздников.
+  Это гарантирует нахождение реальных предшествующих торговых дней при любой длительности выходных или праздников без холостых запросов внутри одного нерабочего интервала.
 
 #### 2. Интервальное кэширование нерабочих дней (`CacheReportInterval`)
 - **Проблема:** Когда на запрос за понедельник (`19.01`) ЦБ РФ возвращает курс, установленный в субботу (`17.01`), обычное кэширование по ключу запрошенной даты сохранило бы ответ только под ключом `19.01`. При переключении пользователя на `18.01` или `17.01` произошёл бы лишний сетевой запрос за тем же самым XML.
@@ -324,7 +334,30 @@ russian-central-bank-exchange-rates/
 
 #### 6. Структурное равенство (`SequenceEqual`) в `record` с коллекциями и защита Email
 - **Проблема:** Стандартная реализация `Equals` в C# `record` сравнивает свойства типа `IReadOnlyList<T>` по ссылке (`ReferenceEquals`), а не по элементам. Кроме того, стандартный `MailboxAddress.TryParse` допускает строки вида `"Hacker <victim@mail.ru>"`.
-- **Решение:** В `ExchangeRateReport` и `DailyExchangeRatesReport` переопределены `Equals` и `GetHashCode` с поэлементным сравнением через `SequenceEqual`. В `EmailAddress.Create` помимо `EmailAddressAttribute` и `MailboxAddress.TryParse` проверяется строгое совпадение `mailbox.Address == trimmed`, что полностью блокирует Display-Name и Header Injection.
+- **Решение:** В `ExchangeRateReport`, `CurrencyRateTrend` и `DailyExchangeRatesReport` переопределены `Equals` и `GetHashCode` с поэлементным сравнением через `SequenceEqual`. В `EmailAddress.Create` помимо `EmailAddressAttribute` и `MailboxAddress.TryParse` проверяется строгое совпадение `mailbox.Address == trimmed`, что полностью блокирует Display-Name и Header Injection.
+
+#### 7. Дефекты исторических XML в базе ЦБ РФ за 1990-е годы (кейс `06.06.1996`, `R01720A`) и паттерн Tolerant Reader
+- **Проблема:** В реальных архивных выгрузках `XML_daily.asp` Банка России за 1990-е годы встречаются записи, нарушающие собственную XSD-схему ЦБ РФ. Например, за `06.06.1996` элемент `<Valute ID="R01720A">` (*«Украинских карбованцев»*) содержит номинал и курс, но в нём полностью отсутствуют теги `<NumCode>` и `<CharCode>` (при десериализации `NumCode = 0`, `CharCode = null`). При наивной валидации по принципу *All-or-Nothing* одна битая запись из 24 валют приводила к отказу парсинга всего дневного среза (а также любого 7-дневного окна, задевающего эту дату).
+- **Решение:** В маппере антикоррупционного слоя ([`CbrMapperExtensions.ToDomain`](./Core/Infrastructure/Mappers/CbrMapperExtensions.cs)) реализован паттерн **Tolerant Reader** (Мартин Фаулер): каждая запись `<Valute>` проходит индивидуальную доменную валидацию (`Currency.Create` → `CurrencyRate.Create`). Если конкретная запись в XML ЦБ РФ повреждена, она изолированно отбрасывается с записью `LogWarning` (с указанием ID валюты, даты среза и причины), а отчёт успешно формируется из остальных валидных котировок (23 из 24 за `06.06.1996`). Если же в ответе ЦБ РФ не осталось ни одной валидной валюты (например, пустой `<ValCurs>` за `01.06.1996`), срабатывает доменный инвариант `ExchangeRateReport.Create` (*«Список курсов валют не может быть пустым»*).
+
+#### 8. Ложное срабатывание офлайн-режима (Fail-Safe) при ошибках данных/конфигурации и доменная таксономия `CbrErrors`
+- **Проблема:** Если возвращать из `CbrClient` стандартный `Error.Failure` для любых сбоев (и сетевых, и ошибок `config.json`, и ошибок десериализации XML), а в `CachedExchangeRateAnalyticsService.GetFailSafeOrError` перехватывать **любую** ошибку (`IsError == true`), то при ошибке валидации данных или опечатке в `BaseUrl` в `config.json` кэш-декоратор молча подменяет ошибку старым отчётом из `last-report.json`. В результате UI видит несовпадение запрошенной и полученной даты и выводит ложный баннер *«Автономный режим (нет связи с сервером ЦБ РФ)»* при полностью работающем интернете.
+- **Решение:** В [`Core/Domain/Errors/CbrErrors.cs`](./Core/Domain/Errors/CbrErrors.cs) выделена специализированная категория транзиентных сетевых сбоев через `Error.Custom(type: TransientNetworkErrorType, ...)` (`Cbr.ServerHttpError`, `Cbr.Timeout`, `Cbr.NetworkFailure`) и предикат `.IsTransientNetworkError()`. Механизм `GetFailSafeOrError` и частичная сборка офлайн-графика активируются **исключительно при реальных сетевых/транспортных отказах**, тогда как ошибки валидации, формата XML или конфигурации честно пробрасываются на экран пользователя.
+
+#### 9. Graceful Degradation 7-дневного графика в офлайне (`reports.Count >= 2`) и защита кэша от перезаписи неполным окном (`IsHistoryComplete`)
+- **Проблема:** Если пользователь загрузил отчёт на `12.10.2026` (в кэш попали срезы за `[06.10 .. 12.10]`), затем пропал интернет, и пользователь выбирает `10.10.2026`, то в кэше **уже есть** оба среза, необходимых для таблицы курсов и дневной динамики (`CurrentReport` за `10.10` и `PreviousReport` за `09.10`), но не хватает старых срезов за `04.10–05.10` для полного 7-дневного графика. Без разделения критичности срезов сетевая ошибка на 6-м дне ретроспективы отбросила бы весь отчёт за `10.10`. В то же время, если сохранить такой «урезанный» офлайн-отчёт в `IMemoryCache` и `last-report.json`, он перезапишет на диске полноценный 7-дневный кэш и не позволит докачать недостающие дни графика после восстановления связи.
+- **Решение:**
+  1. В [`ExchangeRateAnalyticsService.FetchHistoricalReportsAsync`](./Core/Services/ExchangeRateAnalyticsService.cs) при `reports.Count >= 2` транзиентная сетевая ошибка (`IsTransientNetworkError()`) при докачке глубоких архивных дней для графика не прерывает формирование отчёта ошибкой, а завершает цикл с `LogWarning` и строит отчёт на выбранную дату по доступным в кэше срезам.
+  2. В агрегате [`DailyExchangeRatesReport`](./Core/Domain/Models/DailyExchangeRatesReport.cs) вычисляется свойство полноты исторического окна `IsHistoryComplete`.
+  3. В [`CachedExchangeRateAnalyticsService.FetchAndCacheAsync`](./Core/Infrastructure/CachedExchangeRateAnalyticsService.cs) запись в `IMemoryCache` и `last-report.json` выполняется **строго при `freshReport.IsHistoryComplete == true`**. Благодаря этому частичный офлайн-отчёт отображается пользователю (с предупреждением в UI и примечанием под графиком в PDF), но не загрязняет L1/L2-кэш, а при появлении интернета автоматически достраивается до полных 7 дней.
+
+#### 10. Фиксация 7-дневного окна графика относительно `RequestedDate` на длинных праздниках и учёт появления `EUR` в 1999 году
+- **Проблема:**
+  1. В новогодние каникулы (например, при выборе `05.01.2025`) действует курс ЦБ РФ, установленный `29.12.2024`. Если отсчитывать 7-дневное окно графика от даты среза ЦБ (`CurrentDate`), график покажет декабрьскую неделю `[23.12.2024 .. 29.12.2024]`, в которой вообще нет запрошенной пользователем даты `05.01.2025`.
+  2. Валюта `EUR` начала котироваться Банком России только с `01.01.1999`. При запросе отчёта за 1992–1998 гг. или за первую неделю января 1999 г. (например, `04.01.1999`, когда окно захватывает конец декабря 1998 г.) кривая `EUR` отсутствует полностью или частично.
+- **Решение:**
+  1. Окно графика привязано к запрошенной календарной дате `[RequestedDate - 6 дней .. RequestedDate]` (`WindowStartDate` в `DailyExchangeRatesReport`), а `CurrencyRateTrend.Create` протягивает действующий курс (`Carry-Forward`) вплоть до `RequestedDate`.
+  2. Метод [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Infrastructure/Helpers/FormattingExtensions.cs) анализирует полноту рядов `USD` и `EUR` относительно `ExpectedTrendDaysCount` и `IsHistoryComplete` и автоматически выводит под заголовком графика в PDF точное аналитическое пояснение (например, почему в 1996 г. отображён только `USD`, почему в начале января 1999 г. `EUR` показан за часть дней окна или почему в автономном режиме график построен по неполному числу дней из кэша).
 
 ---
 
@@ -332,7 +365,7 @@ russian-central-bank-exchange-rates/
 
 ### 6.1. Кэширование последних загруженных данных и формирование отчёта без подключения к сети
 
-Система кэширования построена на **паттерне Decorator** поверх сервисов `ICbrClient` и `IExchangeRateAnalyticsService` и сочетает быстрый кэш в оперативной памяти (**L1 `IMemoryCache`**), персистентный файловый кэш на диске (**L2 `cache/last-report.json`**) и автоматический режим отказоустойчивости (**Fail-Safe**).
+Система кэширования построена на **паттерне Decorator** поверх сервисов `ICbrClient` и `IExchangeRateAnalyticsService` и сочетает быстрый кэш в оперативной памяти (**L1 `IMemoryCache`**), персистентный файловый кэш на диске (**L2 `cache/last-report.json`**), частичную офлайн-сборку из кэшированных срезов и селективный режим отказоустойчивости (**Fail-Safe**).
 
 ```mermaid
 flowchart TD
@@ -340,30 +373,31 @@ flowchart TD
     Validate -->|Ошибка| ErrVal["Возврат Error.Validation"]
     Validate -->|ОК| L1{"Есть в L1 (IMemoryCache)?"}
     L1 -->|Hit| SyncL2["SaveIfChangedAsync в L2 (last-report.json)"] --> RetL1["Возврат отчёта из L1"]
-    L1 -->|Miss| LoadL2["Чтение L2 (last-report.json) + Прогрев L1 интервалов Current/Previous"]
+    L1 -->|Miss| LoadL2["Чтение L2 (last-report.json) + Прогрев L1 всех интервалов HistoricalReports"]
     LoadL2 --> CheckL2{"L2.RequestedDate == date?"}
     CheckL2 -->|Да| SetL1["Запись в L1"] --> RetL2["Возврат отчёта из L2 (без сети)"]
     CheckL2 -->|Нет| Net["Запрос через ExchangeRateAnalyticsService -> CachedCbrClient -> CbrClient"]
-    Net -->|Успех| SaveAll["Запись в L1 + Атомарная запись в L2 (.tmp -> Move)"] --> RetFresh["Возврат свежего отчёта"]
-    Net -->|Ошибка сети / ЦБ РФ| FailSafe{"Есть сохранённый отчёт в L2?"}
-    FailSafe -->|Да| RetFailSafe["LogWarning + Возврат последнего отчёта из L2 (Fail-Safe)"]
-    FailSafe -->|Нет| RetErr["Возврат ошибки сети ErrorOr"]
+    Net -->|Успех (IsHistoryComplete == true)| SaveAll["Запись в L1 + Атомарная запись в L2 (.tmp -> Move)"] --> RetFresh["Возврат полного отчёта"]
+    Net -->|Успех (частичный офлайн-график, IsHistoryComplete == false)| RetPartial["Возврат отчёта без перезаписи L1/L2"]
+    Net -->|Ошибка| CheckErr{"Есть L2 И ошибка IsTransientNetworkError()?"}
+    CheckErr -->|Да| RetFailSafe["LogWarning + Возврат последнего отчёта из L2 (Fail-Safe)"]
+    CheckErr -->|Нет| RetErr["Возврат реальной ошибки ErrorOr на UI"]
 ```
 
 #### Два сценария офлайн-работы (отображение на UI + генерация PDF):
 
-1. **Сценарий А — Офлайн в рамках текущей сессии (из `IMemoryCache`, уровень L1):**
+1. **Сценарий А — Офлайн в рамках текущей сессии и внутри закэшированного 7-дневного окна (из `IMemoryCache`, уровень L1):**
    - Во время работы приложения все загруженные аналитические отчёты кэшируются в памяти под ключами `cbr:daily-analytics:{yyyy-MM-dd}`, а сырые срезы котировок ЦБ РФ — под ключами `cbr:exchange-rates:{yyyy-MM-dd}` (причём метод `CachedCbrClient.CacheReportInterval` сразу заполняет весь диапазон нерабочих/праздничных дней `[report.Date .. requestedDate]`).
    - Если интернет пропадает во время работы приложения:
      - При повторном выборе любой ранее просмотренной даты `CachedExchangeRateAnalyticsService.TryGetFromMemoryCache` мгновенно возвращает `DailyExchangeRatesReport` из `IMemoryCache` (и синхронизирует `last-report.json` через `SaveIfChangedAsync`).
-     - Более того, если пользователь выберет дату внутри уже закэшированного праздничного/выходного интервала, оба среза (`CurrentReport` и `PreviousReport`) будут взяты декоратором `CachedCbrClient` напрямую из `IMemoryCache`, и `ExchangeRateAnalyticsService` соберёт полный отчёт в памяти без единого обращения к сети.
-     - На **UI** полноценно отображаются карточки итогов дня (топ-3 роста, топ-3 падения, среднее изменение) и интерактивная таблица валют с фильтрацией и сортировкой, а нажатие кнопки **«Сохранить PDF»** (`SavePdfReportAsync`) передаёт закэшированный в памяти `DailyExchangeRatesReport` в `PdfReportService.GenerateDailyReportAsync` и генерирует PDF-файл полностью офлайн.
+     - Если пользователь выбирает соседнюю дату внутри уже загруженного 7-дневного окна (для которой в L1-кэше есть `CurrentReport` и `PreviousReport`), `ExchangeRateAnalyticsService` берёт эти срезы из `CachedCbrClient` и формирует точный отчёт на выбранную дату даже тогда, когда более глубокие архивные срезы для 7-дневного графика недоступны без сети (`reports.Count >= 2` + `IsTransientNetworkError()`). При этом такой частичный отчёт (`IsHistoryComplete == false`) не перезаписывает `last-report.json`.
+     - На **UI** полноценно отображаются карточки итогов дня (топ-3 роста, топ-3 падения, среднее изменение) и интерактивная таблица валют с фильтрацией и сортировкой, а нажатие кнопки **«Сохранить PDF»** (`SavePdfReportAsync`) генерирует PDF-файл полностью офлайн.
 
-2. **Сценарий Б — Офлайн после перезапуска приложения (из файла `cache/last-report.json`, уровень L2 + Fail-Safe):**
+2. **Сценарий Б — Офлайн после перезапуска приложения на произвольную дату вне кэша (из файла `cache/last-report.json`, уровень L2 + Fail-Safe):**
    - После полного закрытия и повторного запуска приложения оперативный кэш `IMemoryCache` пуст.
-   - При первом же запросе `CachedExchangeRateAnalyticsService` обращается к `LastReportFileCache.GetAsync()`, десериализует `cache/last-report.json` и методом `TryRestoreFromDiskCache` **прогревает `IMemoryCache`** (восстанавливая в памяти интервалы `CurrentReport` и `PreviousReport`).
+   - При первом же запросе `CachedExchangeRateAnalyticsService` обращается к `LastReportFileCache.GetAsync()`, десериализует `cache/last-report.json` и методом `TryRestoreFromDiskCache` **прогревает `IMemoryCache`** (восстанавливая в памяти все календарные интервалы из `HistoricalReports`).
    - Если запрошенная дата совпадает с датой в `last-report.json` (`diskReport.RequestedDate == date`), отчёт сразу возвращается из файла и кэшируется в `IMemoryCache` без обращения к сети.
-   - Если пользователь запрашивает новую дату при отсутствии интернета, сетевой вызов возвращает ошибку `CbrClient.NetworkError`, после чего срабатывает механизм **`GetFailSafeOrError`**: сервис перехватывает ошибку сети, логирует предупреждение и возвращает восстановленный из `last-report.json` отчёт (`diskReport`).
+   - Если пользователь запрашивает новую дату вне кэшированного окна при отсутствии интернета, сетевой вызов возвращает транзиентную сетевую ошибку из каталога `CbrErrors` (`IsTransientNetworkError() == true`), после чего срабатывает механизм **`GetFailSafeOrError`**: сервис перехватывает сетевой сбой, логирует предупреждение и возвращает восстановленный из `last-report.json` отчёт (`diskReport`).
    - На **UI** отрисовывается полный сохранённый отчёт вместе с информационным баннером (*«Автономный режим (нет связи с сервером ЦБ РФ): не удалось загрузить данные на выбранную дату {loadedForDate}. Отображён последний сохранённый в кэше отчёт...»*), а кнопка **«Сохранить PDF»** (`SavePdfReportAsync`) генерирует полноценный PDF-документ из восстановленного файлового кэша и сохраняет его через нативный диалог ОС.
 
 #### Технические детали реализации:
@@ -372,7 +406,8 @@ flowchart TD
    - Заполняет сразу весь диапазон нерабочих дат `[report.Date .. requestedDate]` методом `CacheReportInterval`.
 2. **Декоратор `CachedExchangeRateAnalyticsService` и `LastReportFileCache` (L1 + L2 для аналитического отчёта):**
    - **AOT-дружественная сериализация без рефлексии:** для записи и чтения `last-report.json` используется генератор исходного кода `System.Text.Json` (`[JsonSerializable(typeof(LastDailyExchangeRatesReportCacheDto))]` в [`LastDailyExchangeRatesReportCacheJsonContext.cs`](./Core/Infrastructure/Dto/LastDailyExchangeRatesReportCacheJsonContext.cs)).
-   - **Нормализованное хранение и повторная валидация инвариантов:** в JSON-файл сохраняются только `RequestedDate` и два исходных среза котировок (`CurrentReport`, `PreviousReport`), без дублирования вычисляемых коллекций. При загрузке с диска маппер [`CacheMapperExtensions.ToDomain`](./Core/Infrastructure/Mappers/CacheMapperExtensions.cs) заново проводит данные через всю цепочку доменных фабрик (`Currency.Create` → `CurrencyRate.Create` → `ExchangeRateReport.Create` → `DailyExchangeRatesReport.Create`). Если файл кэша был повреждён или изменён вручную с нарушением инвариантов, он отбраковывается с записью `Warning` в лог.
+   - **Нормализованное хранение и повторная валидация инвариантов:** в JSON-файл сохраняются только `RequestedDate` и упорядоченный список исходных срезов котировок `HistoricalReports` (`[0]` — актуальный срез `CurrentReport`, `[1]` — предыдущий торговый срез `PreviousReport`, `[2..N]` — срезы для покрытия 7-дневного окна графика), без дублирования вычисляемых коллекций (`AllRates`, `TopGrown`, `TopFallen`, `WeeklyTrends`). При загрузке с диска маппер [`CacheMapperExtensions.ToDomain`](./Core/Infrastructure/Mappers/CacheMapperExtensions.cs) заново проводит данные через всю цепочку доменных фабрик (`Currency.Create` → `CurrencyRate.Create` → `ExchangeRateReport.Create` → `DailyExchangeRatesReport.Create`), автоматически восстанавливая и таблицу динамики, и 7-дневные тренды для графика. Если файл кэша был повреждён или изменён вручную с нарушением инвариантов, он отбраковывается с записью `Warning` в лог.
+   - **Защита кэша от деградации (`IsHistoryComplete`):** в L1 и L2 сохраняются только отчёты с полным 7-дневным покрытием (`if (freshReport.IsHistoryComplete)`), что предотвращает затирание полного кэша частичными офлайн-отчётами.
    - **Атомарная потокобезопасная запись (`SaveIfChangedAsync`):** конкурентный доступ синхронизируется через `SemaphoreSlim(1, 1)`. Чтобы исключить повреждение файла при внезапном завершении процесса или отключении питания, запись сначала производится во временный файл `last-report.json.tmp`, после чего выполняется атомарная замена `File.Move(tempPath, cacheFilePath, overwrite: true)` с гарантированной очисткой `.tmp` в блоке `finally`.
 
 ---
@@ -391,9 +426,23 @@ flowchart TD
    - Зарегистрирован глобальный обработчик `AppDomain.CurrentDomain.UnhandledException`, который при любой критической ошибке среды выполнения записывает `Log.Fatal` и принудительно сбрасывает файловый буфер через `Log.CloseAndFlush()`.
 
 2. **Сквозное покрытие всех этапов работы:**
-   - **HTTP и парсинг (`CbrClient`, `CachedCbrClient`):** старт запроса на дату, попадание в L1-кэш, успешное получение среза (с фактической датой ЦБ РФ и числом валют), ошибки HTTP/сети/таймаута и ошибки десериализации XML.
-   - **Аналитика и файловый кэш (`ExchangeRateAnalyticsService`, `CachedExchangeRateAnalyticsService`, `LastReportFileCache`):** расчёт аналитики, чтение и сохранение `last-report.json`, восстановление из L2-кэша, отбраковка невалидного кэш-файла и активация Fail-Safe режима.
+   - **HTTP и парсинг (`CbrClient`, `CachedCbrClient`, `CbrMapperExtensions`):** старт запроса на дату, попадание в L1-кэш, успешное получение среза (с фактической датой ЦБ РФ и числом валют), предупреждения `LogWarning` при пропуске повреждённых архивных записей `<Valute>` (**Tolerant Reader**), ошибки HTTP/сети/таймаута и ошибки десериализации XML.
+   - **Аналитика и файловый кэш (`ExchangeRateAnalyticsService`, `CachedExchangeRateAnalyticsService`, `LastReportFileCache`):** расчёт аналитики, частичная сборка графика в офлайне, чтение и сохранение `last-report.json`, восстановление из L2-кэша, отбраковка невалидного кэш-файла и активация Fail-Safe режима.
    - **PDF и SMTP (`PdfReportService`, `SmtpEmailService`):** начало и успешное завершение генерации PDF с указанием размера документа в байтах, подключение к SMTP-серверу (`Host:Port`), успешная отправка письма получателю и детализация ошибок SMTP/TLS/аутентификации.
+
+---
+
+### 6.3. График динамики курса (`USD` / `EUR`) за последние 7 дней в PDF-отчёте
+
+1. **Эффективный сбор исторических срезов без лишних HTTP-запросов (`FetchHistoricalReportsAsync`):**
+   - Вместо 7 наивных календарных запросов на каждый день недели [`ExchangeRateAnalyticsService`](./Core/Services/ExchangeRateAnalyticsService.cs) шагает назад строго от даты фактически действовавшего среза: `reports[^1].Date.AddDays(-1)`.
+   - Цикл `while (reports.Count < 2 || reports[^1].Date > windowStartDate)` одновременно гарантирует наличие минимум 2 торговых срезов для таблицы динамики и полное покрытие 7-дневного календарного окна `[RequestedDate - 6 дней .. RequestedDate]` (`WindowStartDate`, за неделю обычно выполняется 5–6 запросов вместо 7, а в новогодние каникулы — всего 2 запроса).
+2. **Протяжка курса на нерабочие дни (`Carry-Forward` / `LOCF` в `CurrencyRateTrend.Create`) и умные примечания в PDF:**
+   - В финансовой отчётности в выходные и праздничные дни продолжает действовать последний официально установленный курс ЦБ РФ (`r.Date <= date`).
+   - Метод [`CurrencyRateTrend.Create`](./Core/Domain/Models/CurrencyRateTrend.cs) строит непрерывный календарный ряд `CurrencyRatePoint` от `startDate` (`WindowStartDate`) до `endDate` (`RequestedDate`). Если соседние календарные дни попадают на один и тот же нерабочий срез (`ReferenceEquals(effectiveReport, lastEffectiveReport)`), повторный поиск валюты по списку `Rates` не выполняется.
+   - Если для архивной даты (например, в 1992–1998 гг. до введения евро) валюта `EUR` отсутствует в выгрузке ЦБ РФ (`ErrorType.NotFound`) или котировалась только часть недели (начало января 1999 г.), либо отчёт собран в офлайне из неполного кэша (`!IsHistoryComplete`), `DailyExchangeRatesReport` строит график по доступным точкам, а [`FormattingExtensions.FormatWeeklyChartNote`](./Core/Infrastructure/Helpers/FormattingExtensions.cs) выводит под заголовком графика в PDF курсивное пояснение.
+3. **Векторная отрисовка SVG в PDF (`ScottPlot` + `QuestPDF`):**
+   - В [`PdfReportService.ComposeWeeklyTrendsChart`](./Core/Infrastructure/PdfReportService.cs) библиотека **`ScottPlot`** формирует чистый векторный SVG (`plot.GetSvgXml`), который встраивается в документ `QuestPDF` через `row.RelativeItem().Svg(svgXml)`. Благодаря векторному формату линии тренда, маркеры и подписи значений курса сохраняют идеальную чёткость при любом масштабировании и печати.
 
 ---
 
@@ -404,7 +453,8 @@ flowchart TD
 | Библиотека / Инструмент | Версия | Назначение в проекте | Обоснование выбора |
 |---|---|---|---|
 | **[`ErrorOr`](https://github.com/amantinband/error-or)** | `2.1.1` | Result-паттерн (`ErrorOr<T>`) для возврата ошибок из доменных фабрик и сервисов | Позволяет явно описывать ошибки валидации, сети и инфраструктуры в сигнатурах методов без дорогих `throw/catch` в бизнес-логике. |
-| **[`QuestPDF`](https://www.questpdf.com/)** | `2026.9.1` | Генерация табличного PDF-отчёта (`PdfReportService`) | Современный декларативный C# Fluent API для вёрстки PDF без необходимости вручную считать координаты текста и таблиц; высокая скорость генерации и встроенная поддержка кириллических системных шрифтов. |
+| **[`QuestPDF`](https://www.questpdf.com/)** | `2026.9.1` | Генерация табличного PDF-отчёта (`PdfReportService`) | Современный декларативный C# Fluent API для вёрстки PDF без необходимости вручную считать координаты текста и таблиц; высокая скорость генерации и встроенная поддержка кириллических системных шрифтов и векторных SVG. |
+| **[`ScottPlot`](https://scottplot.net/)** | `5.1.59` | Генерация векторного SVG-графика динамики курсов за 7 дней (`PdfReportService`) | Быстрая библиотека научной и финансовой графики для .NET с поддержкой headless-генерации чистого SVG (`GetSvgXml`) без зависимости от системного UI-контекста. |
 | **[`MailKit`](https://github.com/jstedfast/MailKit)** | `4.18.1` | Отправка писем с PDF-вложением по протоколу SMTP (`SmtpEmailService`) | Индустриальный стандарт для .NET (рекомендован Microsoft взамен устаревшего `System.Net.Mail.SmtpClient`); поддерживает полноценный асинхронный I/O, современные механизмы аутентификации и `SecureSocketOptions.Auto`. |
 | **`Microsoft.Extensions.Caching.Memory`** | `8.0.1` | Внутрипроцессное L1-кэширование (`IMemoryCache`) | Стандартный высокопроизводительный потокобезопасный кэш .NET с поддержкой комбинированных политик `SlidingExpiration` и `AbsoluteExpiration`. |
 | **`Microsoft.Extensions.Http`** | `8.0.0` | Фабрика `IHttpClientFactory` и типизированный клиент `AddHttpClient<CbrClient>` | Предотвращает исчерпание сокетов (`Socket Exhaustion`) и управляет временем жизни `HttpMessageHandler`. |
