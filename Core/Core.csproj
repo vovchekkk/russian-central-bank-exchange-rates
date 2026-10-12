@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
     <PackageReference Include="QuestPDF" Version="2026.9.1" />
+    <PackageReference Include="ScottPlot" Version="5.1.59" />
   </ItemGroup>
 
 </Project>

@@ -2,12 +2,15 @@ using System.Globalization;
 using Core.Domain.Models;
 using Core.Infrastructure.Helpers;
 using Core.Services;
+using ErrorOr;
 using Microsoft.Extensions.Logging;
 using QuestPDF.Drawing.Exceptions;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using ErrorOr;
+using ScottPlot;
+using ScottPlot.TickGenerators;
+using Colors = QuestPDF.Helpers.Colors;
 
 namespace Core.Infrastructure;
 
@@ -98,6 +101,7 @@ internal sealed class PdfReportService(ILogger<PdfReportService> logger) : IPdfR
             col.Spacing(14);
 
             col.Item().Element(c => ComposeSummaryBlock(c, report));
+            col.Item().Element(c => ComposeWeeklyChartBlock(c, report));
             col.Item().Element(c => ComposeRatesTable(c, report));
         });
     }
@@ -131,6 +135,120 @@ internal sealed class PdfReportService(ILogger<PdfReportService> logger) : IPdfR
                 });
             });
         });
+    }
+
+    private static readonly string[] SeriesHexColors =
+    [
+        "#1565C0",
+        "#2E7D32",
+        "#C62828",
+        "#6A1B9A",
+        "#EF6C00"
+    ];
+
+    private static void ComposeWeeklyChartBlock(IContainer container, DailyExchangeRatesReport report)
+    {
+        container.Background(Colors.Grey.Lighten4).Padding(12).Column(col =>
+        {
+            col.Spacing(8);
+
+            col.Item().Text(report.FormatWeeklyChartTitle()).FontSize(14).Bold();
+
+            if (report.FormatWeeklyChartNote() is { } chartNote)
+            {
+                col.Item()
+                    .Text(chartNote)
+                    .FontSize(9.5f)
+                    .Italic()
+                    .FontColor(Colors.Grey.Darken2);
+            }
+
+            if (report.WeeklyTrends.Count > 0)
+            {
+                col.Item()
+                    .Height(210)
+                    .Svg(size => RenderWeeklyChartSvg(report, size));
+            }
+        });
+    }
+
+    private static string RenderWeeklyChartSvg(DailyExchangeRatesReport report, Size size)
+    {
+        using var plot = new Plot();
+
+        var dates = report.WeeklyTrends
+            .SelectMany(t => t.Points)
+            .Select(p => p.Date)
+            .Distinct()
+            .OrderBy(d => d)
+            .ToArray();
+
+        var dateIndexMap = dates
+            .Select((d, i) => (Date: d, Index: (double)i))
+            .ToDictionary(x => x.Date, x => x.Index);
+
+        for (var i = 0; i < report.WeeklyTrends.Count; i++)
+        {
+            var trend = report.WeeklyTrends[i];
+            var hexColor = SeriesHexColors[i % SeriesHexColors.Length];
+            AddCurrencySeries(plot, trend, dateIndexMap, hexColor);
+        }
+
+        var ticks = dates
+            .Select((d, i) => new Tick(i, d.ToString("dd.MM", CultureInfo.InvariantCulture)))
+            .ToArray();
+
+        plot.Axes.Bottom.TickGenerator = new NumericManual(ticks);
+        plot.Axes.Bottom.MajorTickStyle.Length = 4;
+        plot.Axes.Margins(left: 0.08, right: 0.08, bottom: 0.18, top: 0.35);
+
+        plot.Font.Set("Arial");
+        plot.ShowLegend(Edge.Top);
+
+        return plot.GetSvgXml((int)size.Width, (int)size.Height);
+    }
+
+    private static void AddCurrencySeries(
+        Plot plot,
+        CurrencyRateTrend trend,
+        IReadOnlyDictionary<DateOnly, double> dateIndexMap,
+        string hexColor
+    )
+    {
+        var count = trend.Points.Count;
+        if (count == 0)
+            return;
+
+        var color = ScottPlot.Color.FromHex(hexColor);
+        var xs = new double[count];
+        var ys = new double[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            var point = trend.Points[i];
+            xs[i] = dateIndexMap[point.Date];
+            ys[i] = (double)point.UnitRate;
+        }
+
+        var scatter = plot.Add.Scatter(xs, ys);
+        scatter.LegendText = trend.Currency.FormatChartLegend();
+        scatter.Color = color;
+        scatter.LineWidth = 2.5f;
+        scatter.MarkerSize = 7;
+
+        for (var i = 0; i < count; i++)
+        {
+            var label = plot.Add.Text(
+                trend.Points[i].UnitRate.FormatShortRate(),
+                xs[i],
+                ys[i]
+            );
+            label.LabelFontColor = color;
+            label.LabelFontSize = 9;
+            label.LabelBold = true;
+            label.LabelAlignment = Alignment.LowerCenter;
+            label.OffsetY = -6;
+        }
     }
 
     private static void ComposeRatesTable(IContainer container, DailyExchangeRatesReport report)
