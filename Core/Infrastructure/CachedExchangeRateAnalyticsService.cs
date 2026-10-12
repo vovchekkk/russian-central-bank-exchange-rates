@@ -1,3 +1,4 @@
+using Core.Domain.Errors;
 using Core.Domain.Models;
 using Core.Services;
 using ErrorOr;
@@ -128,7 +129,7 @@ internal sealed class CachedExchangeRateAnalyticsService(
         List<Error> errors
     )
     {
-        if (diskReport is null)
+        if (diskReport is null || errors.Count is 0 || !errors[0].IsTransientNetworkError())
             return errors;
 
         logger.LogWarning(

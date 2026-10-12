@@ -2,6 +2,7 @@ using System.Globalization;
 using Core.Domain.Models;
 using Core.Infrastructure.Dto;
 using ErrorOr;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Infrastructure.Mappers;
 
@@ -26,7 +27,7 @@ internal static class CbrMapperExtensions
         return CurrencyRate.Create(currencyResult.Value, unitRate, rawValue, dto.Nominal);
     }
 
-    public static ErrorOr<ExchangeRateReport> ToDomain(this ValCurs dto)
+    public static ErrorOr<ExchangeRateReport> ToDomain(this ValCurs dto, ILogger? logger = null)
     {
         if (!DateOnly.TryParseExact(dto.Date, "dd.MM.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
         {
@@ -41,7 +42,16 @@ internal static class CbrMapperExtensions
             {
                 var rateResult = valuteDto.ToDomain();
                 if (rateResult.IsError)
-                    return rateResult.Errors;
+                {
+                    logger?.LogWarning(
+                        "Пропущена некорректная запись валюты (ID: '{Id}') в выгрузке ЦБ РФ за {Date:dd.MM.yyyy}: {Error}",
+                        valuteDto.Id,
+                        date,
+                        rateResult.FirstError.Description
+                    );
+                    continue;
+                }
+
                 rates.Add(rateResult.Value);
             }
         }

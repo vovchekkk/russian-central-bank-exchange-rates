@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Xml.Serialization;
+using Core.Domain.Errors;
 using Core.Domain.Models;
 using Core.Infrastructure.Dto;
 using Core.Infrastructure.Mappers;
@@ -77,9 +78,7 @@ internal sealed class CbrClient(
                     response.ReasonPhrase,
                     dateFormatted
                 );
-                return Error.Failure(
-                    description: $"Сервер ЦБ РФ вернул ошибку (HTTP {(int)response.StatusCode}). Попробуйте позже."
-                );
+                return CbrErrors.ServerHttpError((int)response.StatusCode);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
@@ -94,7 +93,7 @@ internal sealed class CbrClient(
                 return Error.Failure(description: "Не удалось десериализовать ответ от сервера ЦБ РФ.");
             }
             
-            var reportResult = valCurs.ToDomain();
+            var reportResult = valCurs.ToDomain(logger);
             if (reportResult.IsError)
             {
                 logger.LogWarning(
@@ -109,12 +108,12 @@ internal sealed class CbrClient(
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogError(ex, "Таймаут при запросе к ЦБ РФ за {Date}", dateFormatted);
-            return Error.Failure(description: "Превышено время ожидания ответа от сервера ЦБ РФ.");
+            return CbrErrors.Timeout;
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             logger.LogError(ex, "Ошибка сети или чтения потока при запросе к ЦБ РФ за {Date}", dateFormatted);
-            return Error.Failure(description: "Не удалось получить данные от сервера ЦБ РФ. Проверьте интернет.");
+            return CbrErrors.NetworkFailure;
         }
         catch (InvalidOperationException ex)
         {
