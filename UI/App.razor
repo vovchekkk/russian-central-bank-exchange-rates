@@ -147,6 +147,16 @@
         </div>
     }
 
+    @if (_report is not null && !_report.IsHistoryComplete)
+    {
+        <div class="alert alert-warning">
+            <div>
+                <strong>Автономный режим (нет связи с сервером ЦБ РФ):</strong> курсы на <strong>@_report.RequestedDate.ToString("dd.MM.yyyy")</strong> получены из локального кэша.
+                @_report.FormatWeeklyChartNote()
+            </div>
+        </div>
+    }
+
     @if (_report is not null)
     {
         <section class="summary-grid">
