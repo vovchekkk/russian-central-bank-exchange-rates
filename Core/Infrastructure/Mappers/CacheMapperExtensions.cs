@@ -6,12 +6,20 @@ namespace Core.Infrastructure.Mappers;
 
 internal static class CacheMapperExtensions
 {
-    public static LastDailyExchangeRatesReportCacheDto ToCacheDto(this DailyExchangeRatesReport report) => new()
+    public static LastDailyExchangeRatesReportCacheDto ToCacheDto(this DailyExchangeRatesReport report)
     {
-        RequestedDate = report.RequestedDate,
-        CurrentReport = report.CurrentReport.ToCacheDto(),
-        PreviousReport = report.PreviousReport.ToCacheDto()
-    };
+        var historicalReports = new List<ExchangeRateReportCacheDto>(report.HistoricalReports.Count);
+        foreach (var slice in report.HistoricalReports)
+        {
+            historicalReports.Add(slice.ToCacheDto());
+        }
+
+        return new LastDailyExchangeRatesReportCacheDto
+        {
+            RequestedDate = report.RequestedDate,
+            HistoricalReports = historicalReports
+        };
+    }
 
     public static ExchangeRateReportCacheDto ToCacheDto(this ExchangeRateReport report)
     {
@@ -38,31 +46,20 @@ internal static class CacheMapperExtensions
 
     public static ErrorOr<DailyExchangeRatesReport> ToDomain(this LastDailyExchangeRatesReportCacheDto dto)
     {
-        ExchangeRateReport? currentReport = null;
-        if (dto.CurrentReport is not null)
+        var historicalReports = new List<ExchangeRateReport>(dto.HistoricalReports?.Count ?? 0);
+        if (dto.HistoricalReports is not null)
         {
-            var currentReportResult = dto.CurrentReport.ToDomain();
-            if (currentReportResult.IsError)
-                return currentReportResult.Errors;
+            foreach (var reportDto in dto.HistoricalReports)
+            {
+                var reportResult = reportDto.ToDomain();
+                if (reportResult.IsError)
+                    return reportResult.Errors;
 
-            currentReport = currentReportResult.Value;
+                historicalReports.Add(reportResult.Value);
+            }
         }
 
-        ExchangeRateReport? previousReport = null;
-        if (dto.PreviousReport is not null)
-        {
-            var previousReportResult = dto.PreviousReport.ToDomain();
-            if (previousReportResult.IsError)
-                return previousReportResult.Errors;
-
-            previousReport = previousReportResult.Value;
-        }
-
-        return DailyExchangeRatesReport.Create(
-            dto.RequestedDate,
-            currentReport,
-            previousReport
-        );
+        return DailyExchangeRatesReport.Create(dto.RequestedDate, historicalReports);
     }
 
     public static ErrorOr<ExchangeRateReport> ToDomain(this ExchangeRateReportCacheDto dto)

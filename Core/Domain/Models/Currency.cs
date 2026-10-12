@@ -4,6 +4,9 @@ namespace Core.Domain.Models;
 
 public sealed record Currency
 {
+    public static readonly Currency Usd = new(840, "USD", "Доллар США");
+    public static readonly Currency Eur = new(978, "EUR", "Евро");
+
     public ushort NumCode { get; }
     public string CharCode { get; }
     public string Name { get; }

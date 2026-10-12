@@ -79,8 +79,15 @@ internal sealed class CachedExchangeRateAnalyticsService(
         if (diskReport is null)
             return null;
 
-        CachedCbrClient.CacheReportInterval(memoryCache, entryOptions, diskReport.RequestedDate, diskReport.CurrentReport);
-        CachedCbrClient.CacheReportInterval(memoryCache, entryOptions, diskReport.PreviousDate, diskReport.PreviousReport);
+        var reports = diskReport.HistoricalReports;
+        for (var i = 0; i < reports.Count; i++)
+        {
+            var intervalEndDate = i == 0
+                ? diskReport.RequestedDate
+                : reports[i - 1].Date.AddDays(-1);
+
+            CachedCbrClient.CacheReportInterval(memoryCache, entryOptions, intervalEndDate, reports[i]);
+        }
 
         if (diskReport.RequestedDate != date)
             return null;
